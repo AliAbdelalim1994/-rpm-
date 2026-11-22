@@ -25,8 +25,11 @@ const setToken=t=>{ try{ if(t) localStorage.setItem(TOKEN_KEY,t); else localStor
 function writeCache(j){ try{ localStorage.setItem(CACHE_KEY,JSON.stringify({version:j.version,state:j.state})); }catch(e){} }
 function readCache(){ try{ const c=JSON.parse(localStorage.getItem(CACHE_KEY)||'null'); return c&&c.state?c:null; }catch(e){ return null; } }
 /* POST as text/plain so the browser sends a simple request (no CORS preflight; Apps Script cannot answer one). */
+/* fetch with a time limit, so a slow or blocked connection never leaves the page stuck loading. */
+function tfetch(url,opt,ms){ const c=typeof AbortController!=='undefined'?new AbortController():null; const t=c?setTimeout(()=>c.abort(),ms||20000):null;
+  return fetch(url,Object.assign({},opt||{},c?{signal:c.signal}:{})).finally(()=>{ if(t) clearTimeout(t); }); }
 async function api(action,payload){
-  const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({action,token:getToken()},payload||{}))});
+  const r=await tfetch(API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({action,token:getToken()},payload||{}))});
   if(!r.ok) throw new Error('http '+r.status); return r.json(); }
 const S = ()=>st.set;
 function readLocal(){ try{ return JSON.parse(localStorage.getItem(LOCAL_KEY)||'{}')||{}; }catch(e){ return {}; } }
@@ -49,7 +52,7 @@ async function push(){
   }catch(e){ setSync('offline'); clearTimeout(pushT); pushT=setTimeout(push,8000); } }
 window.addEventListener('online',()=>{ if(DIRTY) push(); });
 async function fetchState(){
-  const r=await fetch(API+'?action=state&v='+VERSION,{cache:'no-store'}); if(!r.ok) throw new Error('http '+r.status);
+  const r=await tfetch(API+'?action=state&v='+VERSION,{cache:'no-store'}); if(!r.ok) throw new Error('http '+r.status);
   const j=await r.json(); if(j.unchanged) return false; if(!j.state) throw new Error(j.error||'no state');
   VERSION=j.version; applyServer(j.state); writeCache(j); return true; }
 async function checkAdmin(){ if(!getToken()){ ADMIN=false; return; } try{ const j=await api('me'); ADMIN=!!j.admin; if(!ADMIN) setToken(''); }catch(e){ ADMIN=false; } }
@@ -66,9 +69,11 @@ async function poll(){ if(document.hidden||DIRTY||typing()) return; try{ if(awai
 async function boot(){
   const fail=(t,n)=>{ document.getElementById('app').innerHTML='<div class="sec"><h2>'+t+'</h2><p class="note">'+n+'</p></div>'; };
   if(!API){ fail('Not configured','Open config.js and paste the Apps Script URL in API_URL.'); return; }
+  fail('Loading…','Getting the latest numbers from the server.');
   try{ await Promise.all([fetchState(),checkAdmin()]); }
-  catch(e){ const c=readCache(); if(!c){ fail('Cannot reach the server','Check the connection and reload the page.'); return; } VERSION=c.version; applyServer(c.state); ADMIN=false; }
-  initUI(); route();
+  catch(e){ const c=readCache(); if(!c){ fail('Cannot reach the server','Check the connection and <a href="" onclick="location.reload();return false">reload the page</a>. ('+esc(String(e&&e.message||e))+')'); return; } VERSION=c.version; applyServer(c.state); ADMIN=false; }
+  try{ initUI(); route(); }
+  catch(e){ fail('Something went wrong while opening the app',esc(String(e&&e.message||e))+' — <a href="" onclick="location.reload();return false">reload</a>'); console.error(e); return; }
   setInterval(poll,60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) poll(); });
   if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 }
