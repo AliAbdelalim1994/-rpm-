@@ -255,6 +255,15 @@ td input[type=number]{width:116px}
 .topb.t1{background:#f4c542;color:#4a3500} .topb.t2{background:#cfd6dd;color:#2b3640} .topb.t3{background:#e0a672;color:#4a2a08}
 tbody tr.top10 td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 body.solo .side{display:none}
+
+/* payout ladder (My plan) */
+.lad{position:relative;height:12px;border-radius:6px;margin:38px 4px 30px;border:1px solid var(--line)}
+.lad .tk{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--muted)}
+.lad .tl{position:absolute;top:17px;transform:translateX(-50%);font-size:11px;font-weight:500;color:var(--muted);white-space:nowrap}
+.lad .you{position:absolute;top:-6px;width:3px;height:24px;margin-left:-1px;background:var(--ink);border-radius:2px;text-decoration:none}
+.lad .you span{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;font-weight:600;color:var(--ink)}
+.lad .you.l span{left:0;transform:none}.lad .you.r span{left:auto;right:0;transform:none}
+.plan-msg{margin:6px 0 0;font-size:15px;line-height:1.55}
 </style>
 </head>
 <body>
@@ -273,6 +282,8 @@ body.solo .side{display:none}
 </div>
 <div class="wrap"><footer id="foot"></footer></div>
 <script src="./config.js"></script>
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script src="./app.js"></script>
+<script src="./push.js"></script>
 </body>
 </html>
