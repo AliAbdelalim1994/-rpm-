@@ -264,6 +264,19 @@ body.solo .side{display:none}
 .lad .you span{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;font-weight:600;color:var(--ink)}
 .lad .you.l span{left:0;transform:none}.lad .you.r span{left:auto;right:0;transform:none}
 .plan-msg{margin:6px 0 0;font-size:15px;line-height:1.55}
+
+/* new views: rank movement, me vs store, share */
+.mv{font-weight:600;font-size:12px;color:var(--muted)}.mv.up{color:var(--good)}.mv.dn{color:var(--bad)}
+.vs{display:grid;grid-template-columns:92px minmax(0,1fr) 44px;gap:10px;align-items:center;margin:0 0 10px;font-size:13px}
+.vs-t{position:relative;height:10px;border-radius:5px;background:var(--track)}
+.vs-f{height:100%;border-radius:5px;background:var(--accent)}
+.vs-m{position:absolute;top:-4px;width:2px;height:18px;border-radius:1px;margin-left:-1px}
+.vs-m.a{background:var(--warn)}.vs-m.b{background:var(--good)}
+.vs b{text-align:right;font-weight:600}
+.vs-lg{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:4px}
+.vs-lg .d{display:inline-block;width:10px;height:4px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.vs-lg .d.f{background:var(--accent)}.vs-lg .d.a{background:var(--warn)}.vs-lg .d.b{background:var(--good)}
+.wa-pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--good-bg);white-space:pre-wrap;word-break:break-word;font:inherit;font-size:13.5px;line-height:1.55}
 </style>
 </head>
 <body>

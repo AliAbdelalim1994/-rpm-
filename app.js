@@ -51,25 +51,113 @@ async function push(){
 window.addEventListener('online',()=>{ if(DIRTY) push(); });
 async function fetchState(){
   const r=await fetch(API+'?action=state&v='+VERSION,{cache:'no-store'}); if(!r.ok) throw new Error('http '+r.status);
-  const j=await r.json(); if(j.unchanged) return false; if(!j.state) throw new Error(j.error||'no state');
+  const j=await r.json(); if(j.hv!==undefined && j.hv!==HV) HIST_STALE=true; if(j.unchanged) return false; if(!j.state) throw new Error(j.error||'no state');
   VERSION=j.version; applyServer(j.state); writeCache(j); return true; }
 async function checkAdmin(){ if(!getToken()){ ADMIN=false; return; } try{ const j=await api('me'); ADMIN=!!j.admin; if(!ADMIN) setToken(''); }catch(e){ ADMIN=false; } }
 async function login(pw){
   try{ const j=await api('login',{password:pw}); if(!j.ok){ UI.loginErr=j.error||'Sign-in failed.'; return false; }
-    setToken(j.token); ADMIN=true; UI.loginErr=''; await fetchState(); return true;
+    setToken(j.token); ADMIN=true; UI.loginErr=''; await fetchState(); ensureSnap(); return true;
   }catch(e){ UI.loginErr='Cannot reach the server.'; return false; } }
 async function logout(){ setToken(''); ADMIN=false; DIRTY=false; setSync('idle'); route(); }
+/* =============== saved snapshots of each company agents file (rank and score trends) =============== */
+let HIST=[], HV=-1, HIST_STALE=false, HIST_BUSY=false;
+try{ const hc=JSON.parse(localStorage.getItem('rpm-hist')||'null'); if(hc&&Array.isArray(hc.snaps)){ HIST=hc.snaps; HV=hc.hv; } }catch(e){}
+async function fetchHistory(){ const r=await fetch(API+'?action=history',{cache:'no-store'}); if(!r.ok) throw new Error('http '+r.status);
+  const j=await r.json(); if(!Array.isArray(j.snaps)) throw new Error('bad history'); HIST=j.snaps; HV=j.hv;
+  try{ localStorage.setItem('rpm-hist',JSON.stringify({hv:HV,snaps:HIST})); }catch(e){} }
+async function refreshHist(){ if(HIST_BUSY||!HIST_STALE) return; HIST_BUSY=true; HIST_STALE=false;
+  try{ await fetchHistory(); ensureSnap(); if(!typing()&&!DIRTY) route(); }catch(e){ } HIST_BUSY=false; }
+function makeSnap(){ const AG=computeAgents(), a={}; AG.list.forEach(o=>{ a[o.key]=[Math.round(o.overall*1000),Math.round(o.comm*1000),Math.round(o.k.acq.m),o.rank,o.rankStore]; }); return {date:AG.upto,snap:{a}}; }
+async function pushSnap(){ if(!ADMIN||!st.agentBase.length) return; try{ const m=makeSnap(); const j=await api('snap',{date:m.date,snap:m.snap}); if(j.ok){ HIST_STALE=true; HV=-1; refreshHist(); } }catch(e){} }
+function ensureSnap(){ try{ if(!ADMIN||!st||!st.agentBase||!st.agentBase.length) return; const d=lastAgentDate(); if(d&&!HIST.some(h=>h.d===d)) pushSnap(); }catch(e){} }
+function histSeries(key){ return HIST.filter(h=>h.s&&h.s.a&&h.s.a[key]).map(h=>({d:h.d,ov:h.s.a[key][0]/1000,rank:h.s.a[key][3],rs:h.s.a[key][4]})); }
+function moveOf(a){ const up=a.T.asOf; let p=null; for(const h of HIST){ if(h.d<up && h.s && h.s.a && h.s.a[a.key]) p=h; } if(!p) return null; const x=p.s.a[a.key]; return {d:p.d, rank:x[3]-a.rank, rs:x[4]-a.rankStore, ov:a.overall-x[0]/1000}; }
+const moveCell = m=> !m||m.rank===0 ? '<span class="mv">–</span>' : m.rank>0 ? '<span class="mv up">▲'+m.rank+'</span>' : '<span class="mv dn">▼'+(-m.rank)+'</span>';
+function spark(vals){ if(vals.length<2) return ''; const w=120,h=28,mn=Math.min(...vals),mx=Math.max(...vals),r=(mx-mn)||1;
+  const pts=vals.map((v,i)=>((i/(vals.length-1))*w).toFixed(1)+','+(h-3-((v-mn)/r)*(h-6)).toFixed(1)).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true" style="vertical-align:middle"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
+
+/* =============== agent analysis helpers =============== */
+const firstName = full=>String(full).split('-')[0].trim();
+const rawAcq = o=> o.k.acq.t&&o.T.elapsed ? o.k.acq.m/o.T.elapsed*o.T.total/o.k.acq.t : 0;
+/* What if this agent sells `units` more acquisition lines by month-end? Units follow the agent's own Low/High/VF mix; the app's acquisition cap rule is applied. */
+function simLines(o,units){
+  const k={}; Object.keys(o.k).forEach(x=>k[x]={...o.k[x]});
+  if(k.acq.t && units>0){
+    const ids=['low','high','vf'], mixM=ids.map(x=>o.k[x].m), totM=mixM.reduce((p,q)=>p+q,0), tg=ids.map(x=>o.k[x].t), totT=tg.reduce((p,q)=>p+q,0)||1;
+    const sh=totM>0?mixM.map(v=>v/totM):tg.map(v=>v/totT);
+    ids.forEach((x,i)=>{ if(k[x].t) k[x].proj+=units*sh[i]/k[x].t; });
+    k.acq.proj=rawAcq(o)+units/k.acq.t;
+  } else k.acq.proj=rawAcq(o);
+  applyCap(k); const ov=overallOf(k); return {ov,comm:commission(ov),k}; }
+function minUnitsToReach(o,target){ const f=u=>simLines(o,u).ov>=target+1e-9; if(!f(400)) return null; let lo=1,hi=400; while(lo<hi){ const mid=(lo+hi)>>1; if(f(mid)) hi=mid; else lo=mid+1; } return lo; }
+function highToLift(o){ if(!o.k.acq.capped||!o.k.high.t) return null; const S_=S(); const total=whole((S_.acqLift-o.k.high.proj)*o.k.high.t-1e-9); return total>0?{total,perDay:o.T.left?whole(total/o.T.left):total}:null; }
+function weekInfo(o){ const ws=weeks(o.T), eff=ws.reduce((a,w)=>a+w.ahead,0), i=ws.findIndex(w=>w.ahead>0); if(i<0||!eff) return null;
+  const part=w=>w?whole(o.k.acq.rem*w.ahead/eff):0; return {cur:ws[i],curT:part(ws[i]),next:ws[i+1]||null,nextT:part(ws[i+1]),days:ws[i].ahead}; }
+function prioritiesOf(o){ const w=S().weights;
+  return ['acq','term','conn','adsl'].filter(x=>w[x]>0&&o.k[x].t>0&&o.k[x].proj<1).map(x=>({x,pts:w[x]*(1-o.k[x].proj)*100})).sort((a,b)=>b.pts-a.pts).slice(0,2).map(q=>{ const x=q.x, k=o.k[x];
+    const ask = x==='adsl' ? n(whole(k.rem))+' ADSL by month-end' : x==='term' ? egp(Math.ceil(k.daily/1000-1e-9)*1000)+' EGP/day' : n(whole(k.daily))+' '+(UNIT[x]||KMAP[x].unit+'/day');
+    return {x,pts:q.pts,ask}; }); }
+
+/* =============== My sales additions =============== */
+function rankCard(me,off,AG){
+  const above=AG.list.filter(a=>a.s===off.s&&a.key!==off.key&&a.overall>me.overall+1e-9).sort((x,y)=>x.overall-y.overall)[0], mv=moveOf(off);
+  let gapTxt;
+  if(!above) gapTxt='You lead your store on overall score.';
+  else if(!me.T.left) gapTxt='The month is over.';
+  else { const u=minUnitsToReach(me,above.overall), nm=esc(firstName(above.n));
+    gapTxt = u===null ? `Selling more acquisition lines will not be enough to pass <b>${nm}</b>: acquisition counts up to ${pc(S().acqCap)} until High lines reach ${pc(S().acqLift)}.`
+      : u>100 ? `<b>${nm}</b> is far ahead: it takes ${n(u)}+ more acquisitions by month-end to pass.`
+      : `To pass <b>${nm}</b> you need <b>${n(u)} more acquisition${u===1?'':'s'}</b> by month-end.`; }
+  const ser=histSeries(off.key).filter(x=>x.d<off.T.asOf).slice(-7).map(x=>x.ov).concat([off.overall]);
+  const move = mv ? (mv.rank===0 ? `Same place in the area as on ${dl(mv.d)}.` : `${mv.rank>0?'Up':'Down'} <b>${Math.abs(mv.rank)}</b> place${Math.abs(mv.rank)===1?'':'s'} in the area since ${dl(mv.d)}.`) : 'Movement shows after the next company file.';
+  return sec('My rank','Official company numbers',`<p class="plan-msg"><b>${off.rankStore} of ${off.storeCount}</b> in my store · <b>${off.rank} of ${AG.list.length}</b> in the area</p>
+    <p class="note" style="margin:6px 0 0">${gapTxt}</p>
+    <p class="note" style="margin:6px 0 0">${move} ${spark(ser)}</p>`); }
+function weekCard(me){ const w=weekInfo(me);
+  if(!w) return sec('This week','',`<p class="plan-msg">${me.T.left?'No working days left this week.':'The month is over.'}</p>`);
+  return sec('Rest of this week',`${dl(w.cur.from)} to ${dl(w.cur.to)} · ${n(w.days)} working day${w.days===1?'':'s'} left`,
+    `<p class="plan-msg"><b>${n(w.curT)}</b> acquisition lines${w.next?` · next week <b>${n(w.nextT)}</b>`:''}</p>`); }
+function prioCard(me){ const pr=prioritiesOf(me);
+  return sec('My two priorities','The KPIs where I am losing the most points',pr.length?tbl(['KPI',['Points lost','num'],'What it takes'],pr.map(p=>`<tr><td class="name">${KMAP[p.x].short}</td><td class="num"><b>${p.pts.toFixed(1)}</b></td><td class="txt">${esc(p.ask)}</td></tr>`)):'<p class="note" style="margin:0">Every KPI is on pace for 100% of target.</p>'); }
+function vsCard(me,AG,off){
+  const sc=v=>Math.min(v,2)/2*100;
+  const rows=['acq','term','conn','adsl'].filter(x=>me.k[x].t>0).map(x=>{ const ps=AG.list.filter(a=>a.s===off.s&&a.k[x].t>0).map(a=>a.k[x].proj), avg=ps.reduce((t,v)=>t+v,0)/(ps.length||1), best=Math.max(0,...ps);
+    return `<div class="vs"><span>${KMAP[x].short}</span><div class="vs-t"><div class="vs-f" style="width:${sc(me.k[x].proj)}%"></div><i class="vs-m a" style="left:${sc(avg)}%"></i><i class="vs-m b" style="left:${sc(best)}%"></i></div><b>${pc(me.k[x].proj)}</b></div>`; }).join('');
+  return sec('Me against my store','Projected % of target',`${rows}<div class="vs-lg"><span><i class="d f"></i>Me</span><span><i class="d a"></i>Store average</span><span><i class="d b"></i>Best in store</span></div>`); }
+function whatIfCard(me){
+  if(!me.T.left) return '';
+  const opts=[0,1,5,10], sel=opts.includes(UI.wi)?UI.wi:0, res=opts.map(d=>({d,r:simLines(me,d*me.T.left)})), cur=res.find(x=>x.d===sel), prev=res[opts.indexOf(sel)-1], lift=highToLift(me), S_=S();
+  const note = sel===0 ? 'Payout at my current pace.' : (prev && cur.r.comm<=prev.r.comm+1e-9) ? `No extra payout from this step${me.k.acq.capped?`: acquisition counts up to ${pc(S_.acqCap)} until High lines reach ${pc(S_.acqLift)}.`:'.'}` : `Payout moves by +${Math.round((cur.r.comm-me.comm)*100)} pts.`;
+  return sec('What if I sell more every day?',`For the next ${n(me.T.left)} days, on top of my current pace`,`<div class="ctrl" style="gap:6px;margin-bottom:10px">${opts.map(d=>`<button type="button" class="btn ${d===sel?'primary':''}" data-wi="${d}">${d?'+'+d+' a day':'Now'}</button>`).join('')}</div>
+    <p class="plan-msg">Score <b>${pc(me.overall,1)}</b>${sel?` → <b>${pc(cur.r.ov,1)}</b>`:''} · Payout <b>${pc(me.comm)}</b>${sel?` → <b>${pc(cur.r.comm)}</b>`:''}</p>
+    <p class="note" style="margin:6px 0 0">${note}</p>${lift?`<p class="note" style="margin:6px 0 0">To lift the cap, High lines must reach ${pc(S_.acqLift)}: <b>${n(lift.total)} more High lines</b> (${n(lift.perDay)} a day).</p>`:''}`); }
+
+/* =============== Store additions: WhatsApp message and team plan =============== */
+function storeShare(s,AG){
+  const T=AG.T, list=AG.list.filter(a=>a.s===s.name).sort((x,y)=>whole(y.k.acq.daily)-whole(x.k.acq.daily)||x.n.localeCompare(y.n));
+  const zero=list.filter(a=>a.k.adsl.t>0&&a.k.adsl.m<=0).map(a=>firstName(a.n)), avg=list.length?list.reduce((t,a)=>t+a.comm,0)/list.length:0;
+  const lines=['RPM · '+s.name+' · day '+n(T.elapsed)+' of '+n(T.total)+' (company file of '+dl(AG.upto)+')','Acquisitions needed per day:'].concat(list.map(a=>'• '+firstName(a.n)+': '+n(whole(a.k.acq.daily))));
+  if(zero.length) lines.push('No ADSL yet: '+zero.join(', ')); lines.push('Store payout average: '+pc(avg));
+  const text=lines.join('\n'); UI.waText=text;
+  return sec('Share with the team','Whole numbers, rounded up. Opens WhatsApp and you choose the group',`<pre class="wa-pre">${esc(text)}</pre><div class="ctrl" style="gap:8px;margin-top:10px"><a class="btn primary" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(text)}">Send on WhatsApp</a><button type="button" class="btn" id="wa-copy">Copy text</button></div>`); }
+function teamPlan(s,AG){
+  const T=AG.T, list=AG.list.filter(a=>a.s===s.name); if(!T.left||!list.length) return '';
+  const gains=list.filter(a=>a.k.acq.t).map(a=>({a,after:simLines(a,T.left).comm})).filter(g=>g.after-g.a.comm>=0.01).sort((x,y)=>(y.after-y.a.comm)-(x.after-x.a.comm)).slice(0,5);
+  const avg0=list.reduce((t,a)=>t+a.comm,0)/list.length, avg1=list.reduce((t,a)=>{ const g=gains.find(x=>x.a.key===a.key); return t+(g?g.after:a.comm); },0)/list.length;
+  return sec('Team plan','What +1 acquisition a day from the agents who gain the most does to this store',gains.length?`<p class="plan-msg">If these ${gains.length} agent${gains.length===1?'':'s'} each add <b>+1 acquisition a day</b>, the store payout average goes from <b>${pc(avg0)}</b> to <b>${pc(avg1)}</b>.</p>`+tbl(['Agent',['Payout now','num'],['With +1 a day','num']],gains.map(g=>`<tr><td class="name">${esc(g.a.n)}${dbtn('agent',g.a.key)}</td><td class="num">${pc(g.a.comm)}</td><td class="num"><b>${pc(g.after)}</b></td></tr>`)):'<p class="note" style="margin:0">+1 acquisition a day does not change anyone\'s payout by a full point. Use the Payout analysis screen for the bigger moves.</p>'); }
+
 function loadXlsx(){ if(window.XLSX) return Promise.resolve(); return new Promise((ok,bad)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=ok; s.onerror=()=>bad(new Error('Could not load the Excel reader. Check the connection and try again.')); document.head.appendChild(s); }); }
 function initUI(){ Object.assign(UI,{store:st.stores[0].name, planK:'acq', paceK:'acq', agStore:'all', agSort:'comm', agQ:'', agSel:null, simS:st.stores[0].name, simVals:{}, entryDate:null, entryAgentStore:st.stores[0].name, upload:null, uploadS:null, flash:'', confirmReset:false, confirmDel:null, meStore:null, meAgent:null, meDate:null, loginErr:''});
   try{ const v=localStorage.getItem('rpm-store'); if(v && st.stores.some(s=>s.name===v)) UI.store=v; }catch(e){} }
 const typing=()=>{ const a=document.activeElement; return !!a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName); };
-async function poll(){ if(document.hidden||DIRTY||typing()) return; try{ if(await fetchState()) route(); }catch(e){} }
+async function poll(){ if(document.hidden||DIRTY||typing()) return; try{ if(await fetchState()) route(); refreshHist(); }catch(e){} }
 async function boot(){
   const fail=(t,n)=>{ document.getElementById('app').innerHTML='<div class="sec"><h2>'+t+'</h2><p class="note">'+n+'</p></div>'; };
   if(!API){ fail('Not configured','Open config.js and paste the Apps Script URL in API_URL.'); return; }
   try{ await Promise.all([fetchState(),checkAdmin()]); }
   catch(e){ const c=readCache(); if(!c){ fail('Cannot reach the server','Check the connection and reload the page.'); return; } VERSION=c.version; applyServer(c.state); ADMIN=false; }
-  initUI(); route();
+  initUI(); route(); refreshHist();
   setInterval(poll,60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) poll(); });
   if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 }
@@ -329,7 +417,7 @@ function viewArea(){
 /* =============== Store card =============== */
 function viewStore(){
   const s=byName(UI.store); if(!s) return head('Store card','No stores yet');
-  const nt=nextTier(s,T), f=focusOf(s,T), pp=s.pp, ag=computeAgents().list.filter(a=>a.s===s.name).sort((x,y)=>y.overall-x.overall);
+  const nt=nextTier(s,T), f=focusOf(s,T), pp=s.pp, AGx=computeAgents(), ag=AGx.list.filter(a=>a.s===s.name).sort((x,y)=>y.overall-x.overall);
   const ws=weeks(T), acqNeeded=s.k.acq.rem, eff=ws.reduce((a,w)=>a+w.ahead,0);
   const wkShare=w=> eff? s.k.acq.rem*w.ahead/eff : 0;
   const cb=x=>`<div class="cellbar">${bar(x.pct,T.progress)}<span class="num cb-p">${pc(x.pct)}</span></div>`;
@@ -356,6 +444,8 @@ function viewStore(){
   ${sec('Prepaid control',`Cap ${pc(S().prepCap)} of GAs`,`<div class="tiles tiles3">${tile('Sold prepaid',n(pp.sold),`of ${n(pp.allowed)} allowed`)}${tile('Prepaid % of GAs',pc(pp.pct,1),pp.status)}${tile('Room left',n(pp.avail),'prepaid can still be sold')}</div>`)}
   </div>
   ${sec('Weekly acquisition plan','What this store must still sell, spread by working days',tbl(['Week',['Working days left','num'],['Acquisition to sell','num']],ws.filter(w=>w.ahead>0).map(w=>`<tr><td class="name">${dl(w.from)} – ${dl(w.to)}</td><td class="num">${w.ahead}</td><td class="num"><b>${n(wkShare(w))}</b></td></tr>`).concat(`<tr class="area"><td class="name">Total remaining</td><td class="num">${eff}</td><td class="num">${n(acqNeeded)}</td></tr>`)))}
+  ${storeShare(s,AGx)}
+  ${teamPlan(s,AGx)}
   ${sec('Agents in this store',`${ag.length} agents · company file of ${dl(computeAgents().upto)} · <a href="#agents" data-store="${esc(s.name)}" data-to="agents" style="color:var(--accent)">Open agents view</a>`,agentTable(ag,false))}`;
 }
 
@@ -396,9 +486,9 @@ function viewDaily(){
 
 /* =============== Agents (company file, exactly as uploaded) =============== */
 function agentTable(list, showStore){ const bs0=2+(showStore?1:0);
-  return tbl(['#',['Agent','sticky1'],...(showStore?['Store']:[]),['Acquisition','num'],'MTD %',['Acq proj.','num'],...fuHead(),['Overall','num'],['Commission','num'],['Acq / day','num']],
+  return tbl(['#',['Agent','sticky1'],...(showStore?['Store']:[]),['Acquisition','num'],'MTD %',['Acq proj.','num'],...fuHead(),['Overall','num'],['Commission','num'],['Acq / day','num'],['Move','num']],
     list.map((a,i)=>{ const pcell=x=>a.k[x].t?chip(a.k[x].proj,pc(a.k[x].proj)):dash; const bs=byName(a.s);
-      return `<tr class="${a.rank<=10?'top10':''}"><td>${a.rank}</td><td class="name sticky1">${a.rank<=10?`<span class="topb t${a.rank<=3?a.rank:''}" title="Top 10 in the area">★ ${a.rank}</span>`:''}${esc(a.n)}${dbtn('agent',a.key)}</td>${showStore?`<td>${esc(bs?bs.short:a.s)}</td>`:''}<td class="num">${n(a.k.acq.m)} / ${n(a.k.acq.t)}</td><td>${bar(a.k.acq.pct,a.T.progress)}</td><td class="num">${pcell('acq')}</td>${FU.map(k=>`<td class="num">${pcell(k)}</td>`).join('')}<td class="num">${pc(a.overall,1)}</td><td class="num">${commCell(a.comm,a.overall)}</td><td class="num">${n(whole(a.k.acq.daily))}</td></tr>`}),{k:[bs0,bs0+3+FU.length,bs0+4+FU.length]});
+      return `<tr class="${a.rank<=10?'top10':''}"><td>${a.rank}</td><td class="name sticky1">${a.rank<=10?`<span class="topb t${a.rank<=3?a.rank:''}" title="Top 10 in the area">★ ${a.rank}</span>`:''}${esc(a.n)}${dbtn('agent',a.key)}</td>${showStore?`<td>${esc(bs?bs.short:a.s)}</td>`:''}<td class="num">${n(a.k.acq.m)} / ${n(a.k.acq.t)}</td><td>${bar(a.k.acq.pct,a.T.progress)}</td><td class="num">${pcell('acq')}</td>${FU.map(k=>`<td class="num">${pcell(k)}</td>`).join('')}<td class="num">${pc(a.overall,1)}</td><td class="num">${commCell(a.comm,a.overall)}</td><td class="num">${n(whole(a.k.acq.daily))}</td><td class="num">${moveCell(moveOf(a))}</td></tr>`}),{k:[bs0,bs0+3+FU.length,bs0+4+FU.length]});
 }
 function agentCard(a,AG){
   const nt=nextTier(a,AG.T), bs=byName(a.s);
@@ -766,6 +856,11 @@ function viewMe(){
     ${tile('Company file says',pc(off.comm,1),`score ${pc(off.overall,1)} · as of ${dl(AG.upto)}`)}
   </div>
   ${planCard(me,me.T)}
+  ${rankCard(me,off,AG)}
+  ${weekCard(me)}
+  ${prioCard(me)}
+  ${vsCard(me,AG,off)}
+  ${whatIfCard(me)}
   ${sec('Add my sales for a day','Only you see these. The manager and area screens keep showing the company file.',`<div class="formrow" style="margin-bottom:12px"><label class="field">Date<input type="date" id="me-date" value="${date}" min="${addDays(st.agentBaseDate,1)}" max="${lastD}"></label></div>
     <div class="addgrid">${KP.map(k=>`<label class="field">${esc(KMAP[k].short)}${KMAP[k].money?' (EGP)':''}<input type="number" inputmode="numeric" min="0" id="me-${k}" value="${ex[k]!=null?ex[k]:''}" placeholder="0"></label>`).join('')}</div>
     <div class="ctrl" style="margin-top:12px"><button type="button" class="btn primary" id="me-save">Save my day</button>${(st.mine[me.key]||{})[date]?'<button type="button" class="btn danger" id="me-del">Delete this day</button>':''}</div>`)}
@@ -860,6 +955,9 @@ function bind(){
   Object.keys(selMap).forEach(id=>on(id,'onchange',e=>{ selMap[id](e.target.value); route(); }));
   on('ag-more','onclick',()=>{ UI.agLimit=(UI.agLimit||15)+15; route(); });
   on('py-more','onclick',()=>{ UI.pyLimit=(UI.pyLimit||15)+15; route(); });
+  qa('[data-wi]',el=>{ el.onclick=()=>{ UI.wi=+el.dataset.wi; route(); }; });
+  on('wa-copy','onclick',()=>{ const t=UI.waText||''; const done=()=>{ UI.flash='Message copied. Paste it in the WhatsApp group.'; route(); window.scrollTo(0,0); };
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done,()=>prompt('Copy this message:',t)); else prompt('Copy this message:',t); });
   on('ag-q','oninput',e=>{ UI.agQ=e.target.value; UI.agLimit=15; const p=e.target.selectionStart; route(); const q=$('ag-q'); if(q){ q.focus(); q.setSelectionRange(p,p); } });
 
   /* enter data: company reports */
@@ -874,7 +972,7 @@ function bind(){
   on('e-aapply','onclick',()=>{ const up=UI.upload; if(!up||!up.res) return; const date=up.date||st.agentBaseDate;
     st.agentBase=up.res.rows; st.agentBaseDate=date; Object.keys(st.agentDaily).forEach(d=>{ if(d<=date) delete st.agentDaily[d]; });
     Object.values(st.mine).forEach(m=>Object.keys(m).forEach(d=>{ if(d<=date) delete m[d]; }));
-    save(); UI.flash='Agents report of '+dl2(date)+' applied: '+up.res.rows.length+' agents.'; UI.upload=null; route(); window.scrollTo(0,0); });
+    save(); pushSnap(); UI.flash='Agents report of '+dl2(date)+' applied: '+up.res.rows.length+' agents.'; UI.upload=null; route(); window.scrollTo(0,0); });
   /* enter data: day */
   on('e-date','onchange',e=>{ UI.entryDate=e.target.value; UI.flash=''; route(); });
   on('e-save','onclick',()=>{
