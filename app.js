@@ -133,6 +133,69 @@ function whatIfCard(me){
     <p class="plan-msg">Overall <b>${pc(me.overall,1)}</b>${sel?` → <b>${pc(cur.r.ov,1)}</b>`:''} · Final commission <b>${pc(me.comm)}</b>${sel?` → <b>${pc(cur.r.comm)}</b>`:''}</p>
     <p class="note" style="margin:6px 0 0">${note}</p>${lift?`<p class="note" style="margin:6px 0 0">To lift the cap, High lines must reach ${pc(S_.acqLift)}: <b>${n(lift.total)} more High lines</b> (${n(lift.perDay)} a day).</p>`:''}`); }
 
+/* =============== Employee screen: today, pace, month-end range, commission steps, products =============== */
+const grp=(id,title,sub,body)=>`<div class="grp" id="me-${id}"><div class="grp-h"><h2>${title}</h2>${sub?`<p>${sub}</p>`:''}</div><div class="grp-b">${body}</div></div>`;
+function dailySeries(me){
+  const out=[], pts=HIST.filter(h=>h.s&&h.s.a&&h.s.a[me.key]&&h.d<=st.agentBaseDate).map(h=>({d:h.d,c:h.s.a[me.key][2]})).sort((a,b)=>a.d<b.d?-1:1);
+  for(let i=1;i<pts.length;i++){ let w=0,x=pts[i-1].d,g=0; while(x<pts[i].d&&g++<45){ x=addDays(x,1); w+=dayW(x); } const dl_=pts[i].c-pts[i-1].c; if(w>0&&dl_>=0) out.push({d:pts[i].d,v:dl_/w,mine:false}); }
+  (me.dates||[]).forEach(d=>{ const x=st.mine[me.key][d]; out.push({d,v:(+x.low||0)+(+x.high||0)+(+x.vf||0),mine:true}); });
+  return out.slice(-10); }
+function scenarioOf(o,f){ const k={}; Object.keys(o.k).forEach(x=>{ const q={...o.k[x]}; if(q.t) q.proj=(q.m+f*q.run*o.T.left)/q.t; k[x]=q; }); applyCap(k); const ov=overallOf(k); return {ov,comm:commission(ov)}; }
+/* 1. Today */
+function todayCard(me,date,ex){
+  if(!me.T.left) return sec('What to sell','The month is over',`<p class="plan-msg">No days left. Your final commission is <b>${pc(me.comm,1)}</b>.</p>`);
+  const soldAcq=(+ex.low||0)+(+ex.high||0)+(+ex.vf||0), rows=[];
+  const need=whole(me.k.acq.daily);
+  const row=(name,goal,done,fmt)=>{ const left=Math.max(0,goal-done), p=goal>0?Math.min(1,done/goal):1;
+    return `<div class="td"><div class="td-t"><span>${name}</span><b>${left>0?fmt(left)+' to go':'Done ✓'}</b></div><div class="td-b"><i style="width:${p*100}%"></i></div><div class="td-s">Target ${fmt(goal)}${done?` · added ${fmt(done)}`:''}</div></div>`; };
+  if(me.k.acq.t) rows.push(row('Acquisition',need,soldAcq,v=>n(v)+' lines'));
+  if(me.k.term.t) rows.push(row('Terminal',Math.ceil(me.k.term.daily/1000-1e-9)*1000,+ex.term||0,v=>egp(v)+' EGP'));
+  if(me.k.conn.t) rows.push(row('Connectivity',whole(me.k.conn.daily),+ex.conn||0,v=>n(v)+' pts'));
+  if(me.k.adsl.t){ const r=whole(me.k.adsl.rem); rows.push(r>0?`<div class="td"><div class="td-t"><span>ADSL</span><b>${n(r)} left this month</b></div><div class="td-s">${exAd(ex)}Every ADSL counts, even if it is only one today</div></div>`:`<div class="td"><div class="td-t"><span>ADSL</span><b>Target reached ✓</b></div></div>`); }
+  return sec('What to sell',`${dow(date)} ${dl(date)} · what I need to sell today to stay on track`,`${rows.join('')}<div class="ctrl" style="margin-top:12px"><button type="button" class="btn primary" data-jump="me-add">Add what I sold</button></div>`); }
+const exAd=ex=>(+ex.adsl?'Added today: '+n(+ex.adsl)+' · ':'');
+/* 2. Pace */
+function paceCard(me){
+  if(!me.k.acq.t) return '';
+  const ser=dailySeries(me), need=me.k.acq.daily, run=me.k.acq.run, rec=ser.length>=2?ser.slice(-7).reduce((t,x)=>t+x.v,0)/Math.min(7,ser.length):null, ref=rec!=null?rec:run;
+  const gap=need-ref, ok=gap<=0.0001, chipT=ok?'good':gap<=Math.max(1,need*.2)?'warn':'bad';
+  const verdict=!me.T.left?'Month is over':ok?`Ahead of the pace I need (${n(ref)} a day vs ${n(whole(need))} needed)`:`Behind by about ${n(whole(gap))} a day (${n(ref)} a day vs ${n(whole(need))} needed)`;
+  const mx=Math.max(need,...ser.map(x=>x.v),run,1);
+  const bars=ser.length>=2?`<div class="pc"><div class="pc-in"><i class="pc-n" style="bottom:${need/mx*100}%"><b>need ${n(whole(need))}</b></i>${ser.map(x=>{ const hh=Math.max(2,x.v/mx*100); return `<div class="pc-c" title="${dl(x.d)}: ${x.v.toFixed(1)}"><span class="pc-v" style="bottom:${hh}%">${x.v>=10?Math.round(x.v):x.v.toFixed(1).replace(/\.0$/,'')}</span><div class="pc-b ${x.mine?'m':''} ${x.v>=need?'up':''}" style="height:${hh}%"></div><span class="pc-d">${dl(x.d).split(' ')[0]}</span></div>`; }).join('')}</div></div><p class="note" style="margin:8px 0 0">Acquisitions per day. Bars from the company files are the average per working day between two files; green bars are the days I added myself.</p>`
+    :`<p class="note" style="margin:8px 0 0">The daily bars appear after two company files are saved, or when you add your own days.</p>`;
+  return sec('My pace','Selling per day against what I need per day',`<div class="ctrl" style="gap:8px;align-items:center;margin-bottom:10px"><span class="chip ${chipT}">${ok?'Ahead':'Behind'}</span><span style="font-size:13px">${esc(verdict)}</span></div>
+    <div class="pace3"><div><div class="eyebrow">Month so far</div><b>${n(run)}</b><span class="muted"> / day</span></div><div><div class="eyebrow">${rec!=null?'Recent days':'Recent days'}</div><b>${rec!=null?n(rec):'–'}</b><span class="muted"> / day</span></div><div><div class="eyebrow">I need</div><b>${n(whole(need))}</b><span class="muted"> / day</span></div></div>${bars}`); }
+/* 3. Month-end range */
+function rangeCard(me){
+  if(!me.T.left) return '';
+  const ser=dailySeries(me), rec=ser.length>=2?ser.slice(-7).reduce((t,x)=>t+x.v,0)/Math.min(7,ser.length):null, run=me.k.acq.run;
+  const sc=[{l:'If I slow down by a quarter',f:.75},{l:'If I keep today\'s pace',f:1},{l:'If I speed up by a quarter',f:1.25}];
+  if(rec!=null&&run>0&&Math.abs(rec/run-1)>.1) sc.splice(2,0,{l:'If I repeat my recent days ('+n(rec)+' a day)',f:rec/run});
+  const rows=sc.map(s=>({...s,r:scenarioOf(me,s.f)})).sort((x,y)=>x.f-y.f);
+  return sec('Where I could finish','Month-end result at different paces, same change on every KPI',`<table class="mini"><thead><tr><th>Scenario</th><th class="num">Overall</th><th class="num">Final commission</th></tr></thead><tbody>${rows.map(q=>`<tr${q.f===1?' class="me-row"':''}><td>${esc(q.l)}<div class="muted sm">${esc(tierInfo(q.r.ov).l)}</div></td><td class="num">${pc(q.r.ov,1)}</td><td class="num"><b>${pc(q.r.comm,1)}</b></td></tr>`).join('')}</tbody></table><p class="note" style="margin:8px 0 0">It is an estimate. The official number is always the company file.</p>`); }
+function ladderCard(me){
+  const T=me.T; if(!T.left) return '';
+  const steps=[]; let x=me.overall, g=0;
+  while(steps.length<4&&g++<12){ const c=nextCliff(x); if(!c) break; steps.push(c); x=c.v+.002; }
+  if(!steps.length) return sec('Commission steps','',`<p class="plan-msg">You are already in the top commission tier.</p>`);
+  const rows=steps.map(c=>{ const tg=c.v+.001, cm=commission(tg), u=minUnitsToReach(me,tg), d=Math.round((cm-me.comm)*100);
+    const need=u===null?`<span class="muted">Not enough alone${me.k.acq.capped?' (cap)':''}</span>`:`<b>${n(u)}</b> lines<div class="muted sm">${n(whole(u/T.left))} a day</div>`;
+    return `<tr><td>${esc(c.l)}</td><td class="num"><b>${pc(cm,1)}</b><div class="muted sm">${d>=0?'+':''}${d} pts</div></td><td class="num">${need}</td></tr>`; });
+  const lift=highToLift(me);
+  return sec('Commission steps','Acquisition lines I still need to sell to reach each step (whole numbers, rounded up)',`<table class="mini"><thead><tr><th>Step</th><th class="num">Final commission</th><th class="num">Lines needed</th></tr></thead><tbody>${rows.join('')}</tbody></table>`+(lift?`<p class="note" style="margin:8px 0 0">Acquisition counts only up to ${pc(S().acqCap)} until High lines reach ${pc(S().acqLift)}. That needs <b>${n(lift.total)} more High lines</b> (${n(lift.perDay)} a day).</p>`:'')); }
+/* 5. Products */
+function mixCard(me){
+  const ids=['low','high','vf'].filter(x=>me.k[x]&&me.k[x].t>0); if(!ids.length) return '';
+  const names={low:'Low lines',high:'High lines',vf:'VF Cash'}, S_=S();
+  const totM=ids.reduce((t,x)=>t+me.k[x].m,0), totT=ids.reduce((t,x)=>t+me.k[x].t,0)||1;
+  const rows=ids.map(x=>{ const k=me.k[x]; return `<tr><td>${names[x]}<div class="muted sm">mix ${totM?pc(k.m/totM):'–'}</div></td><td class="num"><b>${n(k.m)}</b> / ${n(k.t)}<div class="muted sm">${pc(k.pct)}</div></td><td class="num">${chip(k.proj,pc(k.proj))}</td><td class="num">${me.T.left?n(whole(k.daily)):'–'}</td></tr>`; });
+  const worst=[...ids].sort((a,b)=>me.k[a].proj-me.k[b].proj)[0], h=me.k.high, lift=highToLift(me);
+  let adv; if(!me.T.left) adv='The month is over.';
+  else if(me.k.acq.capped&&h.t) adv=`High lines are at <b>${pc(h.proj)}</b> of target. Acquisition counts only up to ${pc(S_.acqCap)} until High reaches ${pc(S_.acqLift)}, so each extra High line is worth more than a Low line.${lift?` You need <b>${n(lift.total)} more High lines</b> (${n(lift.perDay)} a day).`:''}`;
+  else adv=`High lines are on pace for ${pc(h.proj||0)}, so acquisition counts in full.`;
+  return sec('My products','Low, High and VF against target',`<table class="mini"><thead><tr><th>Product</th><th class="num">Sold / target</th><th class="num">Proj.</th><th class="num">A day</th></tr></thead><tbody>${rows.join('')}</tbody></table>`+`<p class="plan-msg" style="margin-top:12px">${adv}</p>${me.T.left&&me.k[worst].proj<1?`<p class="note" style="margin:6px 0 0">Furthest from target: <b>${names[worst]}</b>, about ${n(whole(me.k[worst].daily))} a day.</p>`:''}`); }
+function jumpBar(items){ return `<nav class="jump" aria-label="Sections">${items.map(([id,l])=>`<button type="button" class="btn" data-jump="me-${id}">${l}</button>`).join('')}</nav>`; }
+
 /* =============== Store additions: WhatsApp message and team plan =============== */
 /* The numbers in the "Store" block and the last line are the STORE's own overall (company report + entered sales), never an average of agents. */
 function storeShare(s,AG){
@@ -878,20 +941,18 @@ function viewMe(){
     ${tile('I need per day',n(whole(me.k.acq.daily)),`acquisition lines for ${n(me.T.left)} days`)}
     ${tile('Company file says',pc(off.comm,1),`overall ${pc(off.overall,1)} · as of ${dl(AG.upto)}`)}
   </div>
-  ${planCard(me,me.T)}
-  ${rankCard(me,off,AG)}
-  ${weekCard(me)}
-  ${prioCard(me)}
-  ${vsCard(me,AG,off)}
-  ${whatIfCard(me)}
-  ${sec('Add my sales for a day','Only you see these. The manager and area screens keep showing the company file.',`<div class="formrow" style="margin-bottom:12px"><label class="field">Date<input type="date" id="me-date" value="${date}" min="${addDays(st.agentBaseDate,1)}" max="${lastD}"></label></div>
+  ${jumpBar([['today','Today'],['commission','Commission'],['pace','Pace'],['products','Products'],['compare','Compare'],['tools','What if'],['details','Details']])}
+  ${grp('today','Today','What to sell now, and where to add it',todayCard(me,date,ex)+'<div id="me-add"></div>'+sec('Add my sales for a day','Only you see these. The manager and area screens keep showing the company file.',`<div class="formrow" style="margin-bottom:12px"><label class="field">Date<input type="date" id="me-date" value="${date}" min="${addDays(st.agentBaseDate,1)}" max="${lastD}"></label></div>
     <div class="addgrid">${KP.map(k=>`<label class="field">${esc(KMAP[k].short)}${KMAP[k].money?' (EGP)':''}<input type="number" inputmode="numeric" min="0" id="me-${k}" value="${ex[k]!=null?ex[k]:''}" placeholder="0"></label>`).join('')}</div>
-    <div class="ctrl" style="margin-top:12px"><button type="button" class="btn primary" id="me-save">Save my day</button>${(st.mine[me.key]||{})[date]?'<button type="button" class="btn danger" id="me-del">Delete this day</button>':''}</div>`)}
-  ${sec('My numbers','Company file plus what I added',tbl(['KPI',['Target','num'],['Company MTD','num'],['I added','num'],['My total','num'],'My %',['Projection','num'],['Daily req.','num']],
+    <div class="ctrl" style="margin-top:12px"><button type="button" class="btn primary" id="me-save">Save my day</button>${(st.mine[me.key]||{})[date]?'<button type="button" class="btn danger" id="me-del">Delete this day</button>':''}</div>`))}
+  ${grp('commission','My commission','Where I stand and what moves it',planCard(me,me.T)+ladderCard(me))}
+  ${grp('pace','Pace and forecast','Am I fast enough, and where will I finish',paceCard(me)+rangeCard(me)+weekCard(me))}
+  ${grp('products','Products and priorities','What to focus on',mixCard(me)+prioCard(me))}
+  ${grp('compare','How I compare','My rank and my store',rankCard(me,off,AG)+vsCard(me,AG,off))}
+  ${grp('tools','What if','Try numbers before I sell',whatIfCard(me)+sec('My simulator','Type a what-if projection % for any KPI and see my final commission move. Only for me.',simBody(me,'emp:'+me.key)))}
+  ${grp('details','Details','My numbers and the days I saved',sec('My numbers','Company file plus what I added',tbl(['KPI',['Target','num'],['Company MTD','num'],['I added','num'],['My total','num'],'My %',['Projection','num'],['Daily req.','num']],
     KPIS.map(kd=>{ const x=me.k[kd.k]; if(!x.t) return ''; const base=off.k[kd.k], add=kd.k==='acq'?me.addAcq:me.add[kd.k];
-      return `<tr><td class="name">${kd.label}</td><td class="num">${val(kd,x.t)}</td><td class="num">${val(kd,base.m)}</td><td class="num ${add?'plus':''}">${add?'+'+val(kd,add):dash}</td><td class="num"><b>${val(kd,x.m)}</b></td><td>${bar(x.pct,me.T.progress)}</td><td class="num">${chip(x.proj,pc(x.proj,1))}</td><td class="num">${per(kd,x.daily)}</td></tr>`}))) }
-  ${sec('My simulator','Type a what-if projection % for any KPI and see my final commission move. Only for me.',simBody(me,'emp:'+me.key))}
-  ${me.dates.length?sec('My saved days','',tbl(['Date',['Acquisition','num'],...KP.filter(k=>!['low','high','vf'].includes(k)).map(k=>[KMAP[k].short,'num']),''],me.dates.map(d=>{ const x=st.mine[me.key][d]; return `<tr><td class="name">${dl(d)} · ${dow(d)}</td><td class="num"><b>${n((+x.low||0)+(+x.high||0)+(+x.vf||0))}</b></td>${KP.filter(k=>!['low','high','vf'].includes(k)).map(k=>`<td class="num">${KMAP[k].money?egp(+x[k]||0):n(+x[k]||0)}</td>`).join('')}<td class="num"><button type="button" class="btn" data-medate="${d}">Edit</button></td></tr>`}))):''}`;
+      return `<tr><td class="name">${kd.label}</td><td class="num">${val(kd,x.t)}</td><td class="num">${val(kd,base.m)}</td><td class="num ${add?'plus':''}">${add?'+'+val(kd,add):dash}</td><td class="num"><b>${val(kd,x.m)}</b></td><td>${bar(x.pct,me.T.progress)}</td><td class="num">${chip(x.proj,pc(x.proj,1))}</td><td class="num">${per(kd,x.daily)}</td></tr>`}))) +(me.dates.length?sec('My saved days','',tbl(['Date',['Acquisition','num'],...KP.filter(k=>!['low','high','vf'].includes(k)).map(k=>[KMAP[k].short,'num']),''],me.dates.map(d=>{ const x=st.mine[me.key][d]; return `<tr><td class="name">${dl(d)} · ${dow(d)}</td><td class="num"><b>${n((+x.low||0)+(+x.high||0)+(+x.vf||0))}</b></td>${KP.filter(k=>!['low','high','vf'].includes(k)).map(k=>`<td class="num">${KMAP[k].money?egp(+x[k]||0):n(+x[k]||0)}</td>`).join('')}<td class="num"><button type="button" class="btn" data-medate="${d}">Edit</button></td></tr>`}))):''))}`;
 }
 
 /* =============== Store manager view =============== */
@@ -952,7 +1013,7 @@ function route(){
   bind();
 }
 const MQ=window.matchMedia('(max-width:720px)');
-function applySecs(){ if(!MQ.matches) return; UI.openSecs=UI.openSecs||{}; document.querySelectorAll('#app .sec').forEach((s,i)=>{ const key=CUR+':'+i; s.dataset.sk=key; if(i>=2 && !UI.openSecs[key]) s.classList.add('closed'); }); }
+function applySecs(){ if(!MQ.matches) return; UI.openSecs=UI.openSecs||{}; document.querySelectorAll('#app .sec').forEach((s,i)=>{ const key=CUR+':'+i; s.dataset.sk=key; const g=s.closest('.grp'); const keep=g?['me-today','me-commission','me-pace','me-products'].includes(g.id):i<2; if(!keep && !UI.openSecs[key]) s.classList.add('closed'); }); }
 function readSheet(kind,f){
   const key=kind==='stores'?'uploadS':'upload'; const rd=new FileReader();
   rd.onload=async ev=>{ try{ await loadXlsx();
@@ -978,6 +1039,7 @@ function bind(){
   Object.keys(selMap).forEach(id=>on(id,'onchange',e=>{ selMap[id](e.target.value); route(); }));
   on('ag-more','onclick',()=>{ UI.agLimit=(UI.agLimit||15)+15; route(); });
   on('py-more','onclick',()=>{ UI.pyLimit=(UI.pyLimit||15)+15; route(); });
+  qa('[data-jump]',el=>el.addEventListener('click',()=>{ const t=document.getElementById(el.dataset.jump); if(t){ t.querySelectorAll('.sec.closed').forEach(x=>{ x.classList.remove('closed'); UI.openSecs=UI.openSecs||{}; if(x.dataset.sk) UI.openSecs[x.dataset.sk]=true; }); } if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); }));
   qa('[data-wi]',el=>{ el.onclick=()=>{ UI.wi=+el.dataset.wi; route(); }; });
   on('wa-copy','onclick',()=>{ const t=UI.waText||''; const done=()=>{ UI.flash='Message copied. Paste it in the WhatsApp group.'; route(); window.scrollTo(0,0); };
     if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done,()=>prompt('Copy this message:',t)); else prompt('Copy this message:',t); });

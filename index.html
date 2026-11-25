@@ -265,6 +265,26 @@ body.solo .side{display:none}
 .lad .you.l span{left:0;transform:none}.lad .you.r span{left:auto;right:0;transform:none}
 .plan-msg{margin:6px 0 0;font-size:15px;line-height:1.55}
 
+
+/* employee screen groups */
+div.grp{display:flex;flex-direction:column;gap:12px;scroll-margin-top:120px}
+.grp-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:4px 2px 0}
+.grp-h h2{margin:0;font-size:16px}.grp-h p{margin:0;font-size:12px;color:var(--muted)}
+.grp-b{display:flex;flex-direction:column;gap:12px;min-width:0}
+.jump{display:flex;gap:6px;overflow-x:auto;padding:2px 0 4px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 56px);z-index:5;background:var(--bg,var(--surface));scrollbar-width:none}
+.jump::-webkit-scrollbar{display:none}.jump .btn{flex:0 0 auto;padding:6px 12px;font-size:13px}
+.td{margin:0 0 12px}.td-t{display:flex;justify-content:space-between;gap:10px;font-size:14px}.td-t b{font-weight:700}
+.td-b{height:8px;border-radius:4px;background:var(--track);margin:6px 0 4px;overflow:hidden}.td-b i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.td-s{font-size:12px;color:var(--muted)}
+.pace3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}.pace3 b{font-size:20px}
+.pc{height:140px;margin-top:10px;padding:18px 0 20px;border-bottom:1px solid var(--line);box-sizing:border-box}
+.pc-in{position:relative;display:flex;align-items:stretch;gap:6px;height:100%}
+.pc-c{flex:1;min-width:0;position:relative}
+.pc-b{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:26px;border-radius:4px 4px 0 0;background:var(--c3,#8aa);opacity:.75}.pc-b.m{background:var(--accent)}.pc-b.up{opacity:1}
+.pc-v{position:absolute;left:0;right:0;text-align:center;font-size:10px;color:var(--muted);margin-bottom:2px}.pc-d{position:absolute;left:0;right:0;text-align:center;bottom:-18px;font-size:10px;color:var(--muted)}
+.pc-n{position:absolute;left:0;right:0;border-top:2px dashed var(--warn);height:0;z-index:2}.pc-n b{position:absolute;right:0;top:-15px;font-size:10px;font-weight:600;color:var(--warn);background:var(--surface);padding:0 4px}
+table.mini{width:100%;border-collapse:collapse;font-size:13px}table.mini th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;text-align:left;padding:4px 6px 8px}table.mini td{padding:9px 6px;border-top:1px solid var(--line);vertical-align:top}table.mini .num,table.mini th.num{text-align:right}.sm{font-size:11px}
+tr.me-row td{background:var(--track)}
 /* new views: rank movement, me vs store, share */
 .mv{font-weight:600;font-size:12px;color:var(--muted)}.mv.up{color:var(--good)}.mv.dn{color:var(--bad)}
 .vs{display:grid;grid-template-columns:92px minmax(0,1fr) 44px;gap:10px;align-items:center;margin:0 0 10px;font-size:13px}
