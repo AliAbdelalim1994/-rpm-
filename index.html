@@ -217,15 +217,16 @@ body.solo .shell{grid-template-columns:minmax(0,940px);justify-content:center}
   /* compact rows: collapsed by default, tap to expand */
   table.rt:not(.flat) tbody tr{display:flex;flex-wrap:wrap;column-gap:12px;cursor:pointer}
   table.rt:not(.flat) tbody tr td{flex:1 1 100%}
-  table.rt:not(.flat) tbody tr:not(.open) td.k{flex:1 1 28%;width:auto;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:0;padding:0 0 10px}
+  table.rt:not(.flat) tbody tr:not(.open) td.k{flex:1 1 0;min-width:0;width:auto;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:0;padding:0 0 10px}
   table.rt:not(.flat) tbody tr:not(.open) td:not(.name):not(.k){display:none}
   table.rt:not(.flat) tbody tr:not(.open) td.name{border-bottom:0;padding:10px 0 6px}
   table.rt:not(.flat) td.name::after{content:"\25BE";float:right;color:var(--muted);font-size:13px}
   table.rt:not(.flat) tr.open td.name::after{content:"\25B4"}
   table.rt:not(.flat) tbody tr:not(.open) td.k .chip{display:none}
   table.rt:not(.flat) tbody tr:not(.open){padding:2px 12px 0;margin-bottom:8px}
-  table.rt:not(.flat) tbody tr:not(.open) td.k{font-size:14px;font-weight:600;padding:0 0 8px;white-space:nowrap}
-  table.rt:not(.flat) tbody tr:not(.open) td.k::before{font-size:10.5px;font-weight:500;white-space:nowrap;max-width:none}
+  table.rt:not(.flat) tbody tr:not(.open) td.k{font-size:14px;font-weight:600;padding:0 0 8px;white-space:normal;overflow-wrap:anywhere}
+  table.rt:not(.flat) tbody tr:not(.open) td.k::before{font-size:10.5px;font-weight:500;white-space:normal;max-width:none;line-height:1.25}
+  table.rt:not(.flat) tbody tr:not(.open) td.k .stack{min-width:0;width:100%}
   table.rt:not(.flat) tbody tr:not(.open) td.name{font-size:15px;padding:8px 0 4px}
   table.rt:not(.flat) tbody tr:not(.open) td.k .comm{font-size:14px}
   /* collapsible sections */
@@ -335,7 +336,7 @@ td.num,th.num{text-align:center}
 <div class="wrap"><footer id="foot"></footer></div>
 <script src="./config.js"></script>
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-<script src="./app.js?v=10"></script>
+<script src="./app.js?v=12"></script>
 <script src="./push.js"></script>
 </body>
 </html>
