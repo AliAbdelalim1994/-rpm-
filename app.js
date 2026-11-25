@@ -115,9 +115,13 @@ function rankCard(me,off,AG){
     <p class="note" style="margin:6px 0 0">${gapTxt}</p>
     <p class="note" style="margin:6px 0 0">${move} ${spark(ser)}</p>`); }
 function weekCard(me){ const w=weekInfo(me);
-  if(!w) return sec('This week','',`<p class="plan-msg">${me.T.left?'No working days left this week.':'The month is over.'}</p>`);
-  return sec('Rest of this week',`${dl(w.cur.from)} to ${dl(w.cur.to)} · ${n(w.days)} working day${w.days===1?'':'s'} left`,
-    `<p class="plan-msg"><b>${n(w.curT)}</b> acquisition lines${w.next?` · next week <b>${n(w.nextT)}</b>`:''}</p>`); }
+  if(!w) return sec('What I need to sell this week','',`<p class="plan-msg">${me.T.left?'No working days left this week.':'The month is over.'}</p>`);
+  const perD=(t,d)=>d>0?n(whole(t/d)):'–', nd=w.next?w.next.ahead:0;
+  const row=(title,sub,total,d)=>`<div class="wk"><div><b>${title}</b><div class="muted sm">${sub}</div></div><div class="wk-n"><b>${n(total)}</b> lines<div class="muted sm">about ${perD(total,d)} a day</div></div></div>`;
+  return sec('What I need to sell this week','Acquisition lines (Low + High + VF Cash) I still have to sell to finish the month on target',
+    row('This week',`${dow(w.cur.from)} ${dl(w.cur.from)} to ${dow(w.cur.to)} ${dl(w.cur.to)} · ${n(w.days)} working day${w.days===1?'':'s'} left`,w.curT,w.days)
+    +(w.next?row('Next week',`${dl(w.next.from)} to ${dl(w.next.to)} · ${n(nd)} working day${nd===1?'':'s'}`,w.nextT,nd):'')
+    +`<p class="note" style="margin:8px 0 0">The days are shared by how many working days each week has (Fridays count as half). It is the plan to reach 100% of my acquisition target.</p>`); }
 function prioCard(me){ const pr=prioritiesOf(me);
   return sec('My two priorities','The KPIs where I am losing the most points',pr.length?tbl(['KPI',['Points lost','num'],'What it takes'],pr.map(p=>`<tr><td class="name">${KMAP[p.x].short}</td><td class="num"><b>${p.pts.toFixed(1)}</b></td><td class="txt">${esc(p.ask)}</td></tr>`)):'<p class="note" style="margin:0">Every KPI is on pace for 100% of target.</p>'); }
 function vsCard(me,AG,off){
@@ -168,11 +172,17 @@ function paceCard(me){
 /* 3. Month-end range */
 function rangeCard(me){
   if(!me.T.left) return '';
-  const ser=dailySeries(me), rec=ser.length>=2?ser.slice(-7).reduce((t,x)=>t+x.v,0)/Math.min(7,ser.length):null, run=me.k.acq.run;
-  const sc=[{l:'If I slow down by a quarter',f:.75},{l:'If I keep today\'s pace',f:1},{l:'If I speed up by a quarter',f:1.25}];
-  if(rec!=null&&run>0&&Math.abs(rec/run-1)>.1) sc.splice(2,0,{l:'If I repeat my recent days ('+n(rec)+' a day)',f:rec/run});
-  const rows=sc.map(s=>({...s,r:scenarioOf(me,s.f)})).sort((x,y)=>x.f-y.f);
-  return sec('Where I could finish','Month-end result at different paces, same change on every KPI',`<table class="mini"><thead><tr><th>Scenario</th><th class="num">Overall</th><th class="num">Final commission</th></tr></thead><tbody>${rows.map(q=>`<tr${q.f===1?' class="me-row"':''}><td>${esc(q.l)}<div class="muted sm">${esc(tierInfo(q.r.ov).l)}</div></td><td class="num">${pc(q.r.ov,1)}</td><td class="num"><b>${pc(q.r.comm,1)}</b></td></tr>`).join('')}</tbody></table><p class="note" style="margin:8px 0 0">It is an estimate. The official number is always the company file.</p>`); }
+  const ser=dailySeries(me), rec=ser.length>=2?ser.slice(-7).reduce((t,x)=>t+x.v,0)/Math.min(7,ser.length):null, run=me.k.acq.run, S_=S();
+  const sc=[{l:'I slow down',d:'a quarter less than now',f:.75},{l:'I keep selling like now',d:'same speed as this month',f:1},{l:'I speed up',d:'a quarter more than now',f:1.25}];
+  if(rec!=null&&run>0&&Math.abs(rec/run-1)>.1) sc.push({l:'I sell like my last days',d:'the speed of my recent days',f:rec/run});
+  const rows=sc.map(q=>({...q,rate:run*q.f,r:scenarioOf(me,q.f)})).sort((x,y)=>x.f-y.f);
+  const base=rows.find(q=>q.f===1)||rows[0];
+  const need=whole(me.k.acq.daily);
+  const body=rows.map(q=>{ const t=tierInfo(q.r.ov), d=Math.round((q.r.comm-me.comm)*100), pl=q.f===1;
+    return `<div class="fin${pl?' now':''}"><div class="fin-l"><b>${esc(q.l)}</b><div class="muted sm">${esc(q.d)} · about <b>${n(q.rate)}</b> lines a day</div></div><div class="fin-r"><b>${pc(q.r.comm,1)}</b><div class="muted sm">final commission</div><span class="chip ${t.t}">${esc(t.l)}</span>${!pl?`<div class="muted sm">${d>=0?'+':''}${d} pts vs now</div>`:''}</div></div>`; }).join('');
+  const bonusU=base.r.ov<S_.bonusFrom?minUnitsToReach(me,S_.bonusFrom):null;
+  const tip=base.r.ov>=S_.bonusFrom?`At my current speed I finish with the bonus. Keep it up.`:base.r.ov<S_.qual?`At my current speed I finish below ${pc(S_.qual)}, which pays no commission. I need about <b>${n(need)} acquisition lines a day</b> to be on track.`:bonusU!=null?`To reach ${pc(S_.bonusFrom)} and get the bonus I need <b>${n(bonusU)} more lines</b> by month-end (about <b>${n(whole(bonusU/me.T.left))} a day</b> from now on, instead of about ${n(run)} now).`:'';
+  return sec('Where I will finish the month',`My final commission at month-end if I sell at different speeds. ${n(me.T.left)} working day${me.T.left===1?'':'s'} left.`,`<p class="note" style="margin:0 0 10px">Speed = how many acquisition lines I sell per day. The same change is applied to every KPI (Terminal, Connectivity, ADSL too).</p>${body}${tip?`<p class="plan-msg" style="margin-top:12px">${tip}</p>`:''}<p class="note" style="margin:8px 0 0">This is an estimate. The official number is always the company file.</p>`); }
 function ladderCard(me){
   const T=me.T; if(!T.left) return '';
   const steps=[]; let x=me.overall, g=0;
