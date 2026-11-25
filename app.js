@@ -444,6 +444,7 @@ const legend = s=>s.map(x=>`<span class="lg"><i style="background:${x.color}"></
 function hbars(items,max,fmtV){ const m=max||Math.max(1,...items.map(i=>i.v)); return `<div class="hbars">${items.map(i=>`<div class="hrow"><span>${esc(i.l)}</span><span class="bar" role="img" aria-label="${esc(i.l)} ${fmtV(i.v)}"><i style="width:${Math.max(0,i.v)/m*100}%"></i>${i.mark!=null?`<b style="left:${i.mark/m*100}%"></b>`:''}</span><span class="num">${fmtV(i.v)}</span></div>`).join('')}</div>`; }
 
 /* =============== context for the current render =============== */
+const APP_VER='10 · 26 Nov 2026';
 let CX, ST, A, T, UI={};
 function setStore(v){ UI.store=v; try{localStorage.setItem('rpm-store',v)}catch(e){} }
 function refresh(){
@@ -1131,7 +1132,7 @@ function route(){
   document.getElementById('brand').textContent = st.areaName+' RPM';
   document.title = st.areaName+' RPM';
   document.getElementById('asof').textContent = dl2(T.asOf);
-  document.getElementById('foot').textContent = 'Store figures: company report of '+dl2(st.baseDate)+(T.asOf>st.baseDate?' plus sales added up to '+dl2(T.asOf):'')+'. Agent figures: company file of '+dl2(st.agentBaseDate)+'.';
+  document.getElementById('foot').textContent = 'Store figures: company report of '+dl2(st.baseDate)+(T.asOf>st.baseDate?' plus sales added up to '+dl2(T.asOf):'')+'. Agent figures: company file of '+dl2(st.agentBaseDate)+'.' + ' · App version '+APP_VER;
   applySecs();
   if(!ADMIN) document.querySelectorAll('[data-pp],[data-note]').forEach(e=>{ e.disabled=true; });
   renderStatus();
