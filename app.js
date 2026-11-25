@@ -413,10 +413,10 @@ const stripTags=s=>String(s).replace(/<[^>]*>/g,'');
 const CTR=/commission|^overall|^score|projection$|^proj\.?$|^my %$|^mtd %$|^%/i;
 const tbl = (cols, rows, o={})=>{ const labels=cols.map((c,i)=>{ const l=stripTags(Array.isArray(c)?c[0]:c); return o.lab?o.lab(i,l):l; });
   const ni=labels[0]==='#'?1:0, keys=o.k||[ni+1,ni+2,ni+3], keyAll=[ni,...keys]; const flat=o.flat||rows.length<=4||rows.some(r=>String(r).includes('<input'));
-  const rr=rows.map(r=>{ let i=0; return String(r).replace(/<td([^>]*)>/g,(m,at)=>{ const cs=/colspan="(\d+)"/.exec(at); const lab=labels[i]||''; const isName=/class="[^"]*name/.test(at); const isK=!isName&&keyAll.includes(i); const ctr=CTR.test(lab); i+=cs?+cs[1]:1;
+  const rr=rows.map(r=>{ let i=0; return String(r).replace(/<td([^>]*)>/g,(m,at)=>{ const cs=/colspan="(\d+)"/.exec(at); const lab=labels[i]||''; const isName=/class="[^"]*name/.test(at); const isK=!isName&&keyAll.includes(i); const ctr=CTR.test(lab)||(o.center&&i>0&&!isName&&!cs); i+=cs?+cs[1]:1;
       if(ctr&&!cs) at=/class="/.test(at)?at.replace('class="','class="ctr '):at+' class="ctr"';
       if(isK) at=/class="/.test(at)?at.replace('class="','class="k '):at+' class="k"'; return `<td${at} data-l="${esc(lab)}">`; }).replace(/<td([^>]*) data-l="([^"]*commission[^"]*)">([\s\S]*?)<\/td>/gi,(m,at,lab,inner)=>{ const mm=/^\s*(\d+(?:\.\d+)?)%/.exec(stripTags(inner)); if(!mm||/heat/.test(at)||!/^(final )?commission( now| at next)?$|^commission$/i.test(lab.trim())) return m; const c=tone(parseFloat(mm[1])/100); at=/class="/.test(at)?at.replace('class="','class="heat '+c+' '):at+' class="heat '+c+'"'; return `<td${at} data-l="${lab}">${inner}</td>`; }); });
-  return `<div class="scroll"><table class="rt${flat?' flat':''}"><thead>${o.groups?`<tr>${o.groups}</tr>`:''}<tr>${cols.map(c=>{ const [l,cl]=Array.isArray(c)?c:[c,'']; return `<th class="${cl}${CTR.test(stripTags(l))?' ctr':''}">${l}</th>`}).join('')}</tr></thead><tbody>${rr.join('')||`<tr><td colspan="${cols.length}" class="muted">Nothing to show.</td></tr>`}</tbody></table></div>`; };
+  return `<div class="scroll"><table class="rt${flat?' flat':''}"><thead>${o.groups?`<tr>${o.groups}</tr>`:''}<tr>${cols.map((c,ci)=>{ const [l,cl]=Array.isArray(c)?c:[c,'']; return `<th class="${cl}${(CTR.test(stripTags(l))||(o.center&&ci>0))?' ctr':''}">${l}</th>`}).join('')}</tr></thead><tbody>${rr.join('')||`<tr><td colspan="${cols.length}" class="muted">Nothing to show.</td></tr>`}</tbody></table></div>`; };
 const sec = (title,sub,body,extra='')=>`<section class="sec ${extra}"><div class="sec-h"><h2>${title}</h2>${sub?`<p>${sub}</p>`:''}</div>${body}</section>`;
 const head = (eb,title,right='')=>`<div class="head"><div><div class="eyebrow">${eb}</div><h1>${title}</h1></div>${right}</div>`;
 const tile = (eb,v,s,cls='',extra='')=>`<div class="tile ${cls}"><div class="eyebrow">${eb}</div><div class="v">${v}</div><div class="s">${s}</div>${extra}</div>`;
@@ -595,8 +595,8 @@ function viewFocus(){
     rows.push(`<tr class="area"><td class="name">${esc(st.areaName)} (average)</td>${av.map(f).map(q=>`<td class="num">${q}</td>`).join('')}<td class="num"><b>${av.reduce((t,q)=>t+q,0).toFixed(1)}</b></td><td>${KMAP[ks[av.indexOf(Math.max(...av))]].short}</td></tr>`);
     rows.push(`<tr><td class="name muted">Stores below 100%</td>${ks.map(x=>`<td class="num muted">${ST.filter(s=>s.k[x].proj<1).length}</td>`).join('')}<td></td><td></td></tr>`);
     return tbl(['Store',...ks.map(x=>[KMAP[x].short+' ('+pc(W[x])+')','num']),['Total lost','num'],'Biggest leak'],rows); })())}
-  ${sec('Store focus board','Priority 1 = most help · focus #1 / #2 = the two KPIs where the store gains the most overall',tbl(['Priority','Store',['Overall','num'],['Commission','num'],'Status','Strongest KPI','Weakest KPI','Focus #1 - what to do','Focus #2 - what to do','Manager note'],
-    pri.map(s=>{ const f=focusOf(s,T); return `<tr><td>${s.pri}</td><td class="name">${esc(s.name)}</td><td class="num">${pc(s.overall,1)}</td><td class="num"><b>${pc(s.comm,1)}</b></td><td>${statusChip(s)}</td><td>${KMAP[f.strongest.k].short}<br><span class="muted">${pc(f.strongest.proj)} projected</span></td><td>${KMAP[f.weakest.k].short}<br><span class="muted">${pc(f.weakest.proj)} projected</span></td><td class="txt">${esc(f.f1)}</td><td class="txt">${esc(f.f2)}</td><td><input type="text" data-note="${esc(s.name)}" value="${esc(st.notes[s.name]||'')}" aria-label="Manager note ${esc(s.short)}"></td></tr>`}))) }`;
+  ${sec('Store focus board','Priority 1 = most help · focus #1 / #2 = the two KPIs where the store gains the most overall',tbl(['Priority','Store',['Overall','num'],['Commission','num'],'Status','Strongest KPI','Weakest KPI',['Gap strongest to weakest','num'],'Focus #1 - what to do','Focus #2 - what to do','Manager note'],
+    pri.map(s=>{ const f=focusOf(s,T); return `<tr><td>${s.pri}</td><td class="name">${esc(s.name)}</td><td class="num">${pc(s.overall,1)}</td><td class="num"><b>${pc(s.comm,1)}</b></td><td>${statusChip(s)}</td><td>${KMAP[f.strongest.k].short}<br><span class="muted">${pc(f.strongest.proj)} projected</span></td><td>${KMAP[f.weakest.k].short}<br><span class="muted">${pc(f.weakest.proj)} projected</span></td><td class="num">${((f.strongest.proj-f.weakest.proj)*100).toFixed(0)} pts${(f.strongest.proj-f.weakest.proj)>=.4?' <span class="chip warn">Lopsided</span>':''}</td><td class="txt">${esc(f.f1)}</td><td class="txt">${esc(f.f2)}</td><td><input type="text" data-note="${esc(s.name)}" value="${esc(st.notes[s.name]||'')}" aria-label="Manager note ${esc(s.short)}"></td></tr>`}))) }`;
 }
 
 
@@ -1015,9 +1015,23 @@ function coachNote(a,AG){ const T_=AG.T; if(!T_.left) return null; const w=S().w
   if(!nt.top&&nt.best) return {why:'Closest commission step: '+nt.label,do:nt.need?nt.need.txt+' in the '+n(T_.left)+' days left.':nt.text};
   return {why:nt.top?'In the top commission tier':'On the way',do:nt.top?'Keep the daily numbers steady until month-end.':'Keep the current pace.'}; }
 
+
+/* ===== Insights helpers ===== */
+const median=a=>{ if(!a.length) return 0; const b=[...a].sort((x,y)=>x-y), m=b.length>>1; return b.length%2?b[m]:(b[m-1]+b[m])/2; };
+const capLoss=o=>{ const k=o.k.acq; if(!k.capped||!k.t) return 0; return Math.max(0,(S().weights.acq||0)*(rawAcq(o)-k.proj)*100); };
+const diffCell=(v,d=1,u=' pts',zero)=>`<td class="num ${v>=0.05?'plus':v<=-0.05?'minus':''}">${Math.abs(v)<0.05?(zero||dash):(v>0?'+':'−')+Math.abs(v).toFixed(d)+u}</td>`;
+function cmpPick(id,opts,cur,label){ return `<label class="ctrl"><span class="muted">${label}</span><select data-cmp="${id}" aria-label="${label}">${opts.map(([k,l])=>`<option value="${esc(k)}" ${k===cur?'selected':''}>${esc(l)}</option>`).join('')}</select></label>`; }
+function cmpTbl(X,Y,rkX,rkY,nx,ny){
+  const row=(l,a,b,diffV,fmt)=>`<tr><td class="name">${l}</td>${a}${b}${diffV==null?'<td class="num">'+dash+'</td>':diffCell(diffV)}</tr>`;
+  const rows=[row('Rank',`<td class="num">${rkX}</td>`,`<td class="num">${rkY}</td>`,null),
+    row('Final commission',`<td class="num heat ${tone(X.comm)}">${pc(X.comm,1)}</td>`,`<td class="num heat ${tone(Y.comm)}">${pc(Y.comm,1)}</td>`,(X.comm-Y.comm)*100),
+    row('Overall',`<td class="num heat ${tone(X.overall)}">${pc(X.overall,1)}</td>`,`<td class="num heat ${tone(Y.overall)}">${pc(Y.overall,1)}</td>`,(X.overall-Y.overall)*100)];
+  KPIS.forEach(kd=>{ const a=X.k[kd.k], b=Y.k[kd.k]; if(!a.t&&!b.t) return; rows.push(row(esc(kd.label),a.t?heat(a.proj):`<td class="num">${dash}</td>`,b.t?heat(b.proj):`<td class="num">${dash}</td>`,a.t&&b.t?(a.proj-b.proj)*100:null)); });
+  rows.push(row('Acquisition per day (month so far)',`<td class="num">${n(X.k.acq.run)}</td>`,`<td class="num">${n(Y.k.acq.run)}</td>`,null));
+  return tbl(['Measure',[esc(nx),'num'],[esc(ny),'num'],['Difference (A − B)','num']],rows,{center:true,flat:true}); }
 function viewInsights(){
   const tab=UI.insTab||'stores', AG=computeAgents();
-  const tabs=seg([['stores','Stores'],['agents','Agents']],tab,'data-ins');
+  const tabs=seg([['stores','Stores'],['quality','Sales quality'],['agents','Agents']],tab,'data-ins');
   if(tab==='stores'){
     const rows=ST.map(s=>({s,c:chanceOf(s)})).filter(r=>r.c), dep=dependency(AG);
     const days=entryDates().map(d=>({d,v:ST.reduce((t,s)=>{ const x=(st.daily[d]||{})[s.name]; return t+(x?(+x.low||0)+(+x.high||0)+(+x.vf||0):0); },0)}));
@@ -1027,8 +1041,12 @@ function viewInsights(){
     ${sec('Can each store make it?','Acquisition to 100% of target. Needed per day against the store speed (month so far), the likely month-end range, and the chance of reaching 100%'+(rows.some(r=>!r.c.real)?' · estimates use a typical day-to-day swing until 4 saved days exist':''),
       tbl(['Store',['Needed/day','num'],['Speed/day','num'],['Best day','num'],['Needed ÷ speed','num'],['Verdict','num'],['Likely end','num'],['Chance','num']],
       rows.map(({s,c})=>`<tr><td class="name">${esc(s.short)}${dbtn('store',s.name)}</td><td class="num">${n(whole(c.need))}</td><td class="num">${n(c.run)}</td><td class="num">${n(c.best)}</td><td class="num">${c.reached?dash:c.ratio.toFixed(2)+'×'}</td><td class="num"><span class="chip ${verdictOf(c).t}">${verdictOf(c).l}</span></td><td class="num">${(c.lo*100).toFixed(0)}–${pc(c.hi)}</td><td class="num"><b>${pc(c.p)}</b></td></tr>`),{center:true}))}
-    ${sec('How concentrated the sales are','Share of the store acquisitions made by the top agent and the top 3 agents',tbl(['Store',['Agents','num'],['Top agent','num'],['Top agent share','num'],['Top 3 share','num']],dep.map(d=>`<tr><td class="name">${esc(d.s.short)}</td><td class="num">${d.cnt}</td><td class="num">${d.top?esc(firstName(d.top.n)):dash}</td><td class="num">${d.tot?pc(d.topSh):dash}</td><td class="num">${d.cnt>3&&d.tot?(d.t3>=.65?`<span class="chip warn">${pc(d.t3)}</span>`:pc(d.t3)):dash}</td></tr>`),{center:true}))}
-    ${sec('Which weekday sells most','Average acquisitions per saved day, all stores together',have>=3?hbars(wd.filter(x=>x.avg!=null).map(x=>({l:WDN[x.w]+' · '+x.n+' day'+(x.n===1?'':'s'),v:x.avg})),mxw,v=>`<b>${n(v)}</b>`):`<p class="note" style="margin:0">Shows after sales were added on at least 3 different weekdays. So far: ${have}.</p>`)}`; }
+    ${raceSec()}
+    ${driftSec()}
+    ${sec('Team depth and concentration','How much of the store acquisition comes from the top agents, and how many agents sell less than half of the store median',tbl(['Store',['Agents','num'],['Top agent','num'],['Top agent share','num'],['Top 3 share','num'],['Median per agent','num'],['Below half the median','num']],dep.map(d=>{ const L=AG.list.filter(a=>a.s===d.s.name).map(a=>a.k.acq.m), md=median(L), low=L.filter(v=>v<md*.5).length; return `<tr><td class="name">${esc(d.s.short)}</td><td class="num">${d.cnt}</td><td class="num">${d.top?esc(firstName(d.top.n)):dash}</td><td class="num">${d.tot?pc(d.topSh):dash}</td><td class="num">${d.cnt>3&&d.tot?(d.t3>=.65?`<span class="chip warn">${pc(d.t3)}</span>`:pc(d.t3)):dash}</td><td class="num">${n(md)}</td><td class="num">${low?`<span class="chip ${low>=3?'bad':'warn'}">${low}</span>`:'0'}</td></tr>`; }),{center:true}))}
+    ${sec('Which weekday sells most','Average acquisitions per saved day, all stores together',have>=3?hbars(wd.filter(x=>x.avg!=null).map(x=>({l:WDN[x.w]+' · '+x.n+' day'+(x.n===1?'':'s'),v:x.avg})),mxw,v=>`<b>${n(v)}</b>`):`<p class="note" style="margin:0">Shows after sales were added on at least 3 different weekdays. So far: ${have}.</p>`)}
+    ${cmpSec('stores')}`; }
+  if(tab==='quality') return qualityView(tabs);
   /* agents */
   const idle=idleAgents(AG), p=idle.p, red=AG.list.filter(a=>a.overall<BAND), mv=AG.list.map(a=>({a,m:moveOf(a)})).filter(x=>x.m&&x.m.rank!==0);
   const up=[...mv].sort((x,y)=>y.m.rank-x.m.rank).filter(x=>x.m.rank>0).slice(0,5), down=[...mv].sort((x,y)=>x.m.rank-y.m.rank).filter(x=>x.m.rank<0).slice(0,5);
@@ -1038,7 +1056,55 @@ function viewInsights(){
   <div class="tiles">${tile('No sales since the last file',p?idle.list.length:'–',p?`of ${AG.list.length} agents · compared with ${dl(p.d)}`:'shows after two company files','hero')}${tile('Below 90% overall',red.length,`of ${AG.list.length} agents`)}${tile('Biggest climber',up[0]?esc(firstName(up[0].a.n)):'–',up[0]?`+${up[0].m.rank} places`:'')}${tile('Biggest drop',down[0]?esc(firstName(down[0].a.n)):'–',down[0]?`−${Math.abs(down[0].m.rank)} places`:'')}</div>
   ${sec('Agents with no sales since the last file',p?`Acquisition did not move between ${dl(p.d)} and ${dl(AG.upto)}. Lowest overall first`:'Needs two saved company files',p?(idle.list.length?tbl(['Agent','Store',['Acquisition MTD','num'],['Overall','num'],['Final commission','num']],idle.list.slice(0,UI.idleLimit||15).map(a=>`<tr><td class="name">${esc(a.n)}${dbtn('agent',a.key)}</td><td>${esc(byName(a.s)?byName(a.s).short:a.s)}</td><td class="num">${n(a.k.acq.m)}</td><td class="num">${pc(a.overall,1)}</td><td class="num">${commCell(a.comm,a.overall)}</td></tr>`),{center:true})+(idle.list.length>(UI.idleLimit||15)?`<div class="ctrl" style="margin-top:10px;justify-content:center"><button type="button" class="btn" id="idle-more">Show all ${idle.list.length}</button></div>`:''):'<p class="note" style="margin:0">Every agent sold something.</p>'):'')}
   <div class="two">${sec('Climbers','Moved up the area ranking since the previous file',mvTbl(up,1))}${sec('Drops','Moved down the area ranking since the previous file',mvTbl(down,-1))}</div>
-  ${sec('Where the agents are in each store','Green 100%+ · yellow 90% to 99.9% · red below 90% (overall)',tbl(['Store',['Agents','num'],'Split',['Green','num'],['Yellow','num'],['Red','num']],dist.map(d=>`<tr><td class="name">${esc(d.s.short)}</td><td class="num">${d.tot}</td><td><div class="stack" role="img" aria-label="${d.g} green, ${d.y} yellow, ${d.r} red"><i class="g" style="width:${d.g/d.tot*100}%"></i><i class="y" style="width:${d.y/d.tot*100}%"></i><i class="r" style="width:${d.r/d.tot*100}%"></i></div></td><td class="num">${d.g}</td><td class="num">${d.y}</td><td class="num">${d.r}</td></tr>`),{center:true}))}`; }
+  ${sec('Where the agents are in each store','Green 100%+ · yellow 90% to 99.9% · red below 90% (overall)',tbl(['Store',['Agents','num'],'Split',['Green','num'],['Yellow','num'],['Red','num']],dist.map(d=>`<tr><td class="name">${esc(d.s.short)}</td><td class="num">${d.tot}</td><td><div class="stack" role="img" aria-label="${d.g} green, ${d.y} yellow, ${d.r} red"><i class="g" style="width:${d.g/d.tot*100}%"></i><i class="y" style="width:${d.y/d.tot*100}%"></i><i class="r" style="width:${d.r/d.tot*100}%"></i></div></td><td class="num">${d.g}</td><td class="num">${d.y}</td><td class="num">${d.r}</td></tr>`),{center:true}))}
+  ${protectSec(AG)}
+  ${cmpSec('agents',AG)}`; }
+
+
+/* Insights: race for the top 3 */
+function raceSec(){
+  const rk=sortedByRank(); if(rk.length<2) return '';
+  const rows=rk.map((s,i)=>{ const up=rk[i-1], dn=rk[i+1];
+    let pass=dash; if(up&&T.left){ const u=minUnitsToReach(s,up.overall+0.0005); pass=u==null?'<span class="muted">more than acquisition alone</span>':`${n(u)} lines · <b>${n(whole(u/T.left))}</b> a day`; }
+    return `<tr><td>${s.rank}</td><td class="name">${stBadge(s)}${esc(s.short)}${dbtn('store',s.name)}</td><td class="num">${pc(s.comm,1)}</td>${up?diffCell(-(up.comm-s.comm)*100,1,' pts','Level'):'<td class="num">'+dash+'</td>'}<td class="num">${pass}</td>${dn?diffCell((s.comm-dn.comm)*100,1,' pts','Level'):'<td class="num">'+dash+'</td>'}</tr>`; });
+  return sec('Race for the top 3','Final commission gap to the store above and below. and what it takes to pass the store above',
+    tbl(['#','Store',['Final commission','num'],['Gap to the store above','num'],['To pass the store above','num'],['Lead over the store below','num']],rows,{center:true})); }
+/* Insights: projection drift */
+function driftSec(){
+  const pv=CX.prev; if(!pv) return sec('Projection drift','Overall now against the previous saved day',`<p class="note" style="margin:0">Shows after sales are added for a second day, or a second company report is uploaded.</p>`);
+  const rows=ST.map(s=>{ const p=pv.stores.find(x=>x.name===s.name); return p?{s,p,d:(s.overall-p.overall)*100,da:(s.k.acq.proj-p.k.acq.proj)*100}:null; }).filter(Boolean).sort((x,y)=>x.d-y.d);
+  return sec('Projection drift',`Month-end projection now against ${dl(pv.T.asOf)}. Falling first, so the stores that need a call are on top`,
+    tbl(['Store',['Overall before','num'],['Overall now','num'],['Change','num'],['Acquisition before','num'],['Acquisition now','num'],['Change','num'],['Direction','num']],
+    rows.map(r=>`<tr><td class="name">${esc(r.s.short)}</td><td class="num">${pc(r.p.overall,1)}</td><td class="num">${pc(r.s.overall,1)}</td>${diffCell(r.d)}<td class="num">${pc(r.p.k.acq.proj,1)}</td><td class="num">${pc(r.s.k.acq.proj,1)}</td>${diffCell(r.da)}<td class="num"><span class="chip ${r.d<=-0.5?'bad':r.d>=0.5?'good':'warn'}">${r.d<=-0.5?'Falling':r.d>=0.5?'Rising':'Steady'}</span></td></tr>`),{center:true})); }
+/* Insights: sales quality tab */
+function qualityView(tabs){
+  const AG=computeAgents(), W=S().weights, lossS=ST.map(s=>({s,l:capLoss(s)})), capped=lossS.filter(x=>x.l>0.05), lossA=AG.list.map(a=>({a,l:capLoss(a)})).filter(x=>x.l>0.05).sort((x,y)=>y.l-x.l);
+  const tot=x=>x.k.low.m+x.k.high.m+x.k.vf.m, sh=(x,k)=>tot(x)?x.k[k].m/tot(x):0, mixRows=[...ST,A];
+  const tiles=`<div class="tiles">${tile('Stores losing points to the cap',capped.length,`of ${ST.length} · acquisition counts up to ${pc(S().acqCap)} until High lines reach ${pc(S().acqLift)}`,'hero')}${tile('Overall points lost, area average',(lossS.reduce((t,x)=>t+x.l,0)/Math.max(1,ST.length)).toFixed(1),'per store, because of the acquisition cap')}${tile('Agents losing points to the cap',lossA.length,`of ${AG.list.length} agents`)}</div>`;
+  const capTbl=sec('Points lost to the acquisition cap','Acquisition above the cap is not counted while High lines are short. High lines to lift = what the store still needs to sell to remove the cap',
+    tbl(['Store',['Acquisition projection','num'],['Counted','num'],['Points lost','num'],['High projection','num'],['High lines to lift the cap','num']],
+    ST.map(s=>{ const l=capLoss(s), hl=highToLift(s); return `<tr><td class="name">${esc(s.short)}${dbtn('store',s.name)}</td><td class="num">${pc(rawAcq(s),1)}</td><td class="num">${pc(s.k.acq.proj,1)}</td><td class="num">${l>0.05?`<b>${l.toFixed(1)}</b>`:dash}</td><td class="num">${s.k.high.t?pc(s.k.high.proj,1):dash}</td><td class="num">${s.k.acq.capped?(hl?`${n(hl.total)} · <b>${n(hl.perDay)}</b> a day`:dash):'<span class="chip good">Lifted</span>'}</td></tr>`; }),{center:true}));
+  const agTbl=sec('Agents losing the most to the cap','Top 10. The cap is the only reason these overalls are lower than their selling',lossA.length?tbl(['Agent','Store',['Acquisition projection','num'],['Counted','num'],['Points lost','num'],['High lines to lift the cap','num']],
+    lossA.slice(0,10).map(({a,l})=>{ const hl=highToLift(a); return `<tr><td class="name">${esc(a.n)}${dbtn('agent',a.key)}</td><td class="num">${esc(byName(a.s)?byName(a.s).short:a.s)}</td><td class="num">${pc(rawAcq(a),1)}</td><td class="num">${pc(a.k.acq.proj,1)}</td><td class="num"><b>${l.toFixed(1)}</b></td><td class="num">${hl?`${n(hl.total)} · <b>${n(hl.perDay)}</b> a day`:dash}</td></tr>`; }),{center:true}):'<p class="note" style="margin:0">No agent is losing points to the cap.</p>');
+  const mixTbl=sec('Product mix by store','Share of each store acquisitions this month. High share against the area shows who sells the better lines',
+    tbl(['Store',['Low','num'],['High','num'],['VF Cash','num'],['High vs area','num'],['Acquisition MTD','num']],
+    mixRows.map(x=>`<tr class="${x===A?'area':''}"><td class="name">${esc(x.name||st.areaName)}</td><td class="num">${pc(sh(x,'low'),1)}</td><td class="num">${pc(sh(x,'high'),1)}</td><td class="num">${pc(sh(x,'vf'),1)}</td>${x===A?'<td class="num">'+dash+'</td>':diffCell((sh(x,'high')-sh(A,'high'))*100)}<td class="num">${n(tot(x))}</td></tr>`),{center:true}));
+  return `${head(`As of ${dl2(T.asOf)}`,'Insights','<div class="note">What the numbers say beyond the tables</div>')}${tabs}${tiles}${capTbl}${agTbl}${mixTbl}`; }
+/* Insights: agents who would fall a commission band if they slow down */
+function protectSec(AG){
+  if(!AG.T.left) return '';
+  const B=payBands(), rows=AG.list.filter(a=>a.k.acq.t&&a.comm>0).map(a=>{ const sc=scenarioOf(a,.75); return {a,sc,from:bandOf(a.overall),to:bandOf(sc.ov)}; }).filter(x=>x.to<x.from).map(x=>({...x,drop:(x.a.comm-x.sc.comm)*100})).sort((x,y)=>y.drop-x.drop);
+  return sec('Protect the tier',`Agents who would fall to a lower commission band if they sold a quarter slower for the rest of the month. ${n(rows.length)} of ${AG.list.length}`,
+    rows.length?tbl(['Agent','Store',['Overall','num'],['If a quarter slower','num'],['Falls to','num'],['Final commission lost','num']],rows.slice(0,10).map(x=>`<tr><td class="name">${esc(x.a.n)}${dbtn('agent',x.a.key)}</td><td class="num">${esc(byName(x.a.s)?byName(x.a.s).short:x.a.s)}</td><td class="num">${pc(x.a.overall,1)}</td><td class="num">${pc(x.sc.ov,1)}</td><td class="num"><span class="chip ${B[x.to].t}">${esc(B[x.to].l)}</span></td><td class="num minus">−${x.drop.toFixed(1)} pts</td></tr>`),{center:true}):'<p class="note" style="margin:0">Nobody would change band at a quarter slower. Everyone has room.</p>'); }
+/* Insights: compare two stores or two agents */
+function cmpSec(kind,AG){
+  if(kind==='stores'){ if(ST.length<2) return ''; if(!byName(UI.cmpS1)) UI.cmpS1=ST[0].name; if(!byName(UI.cmpS2)||UI.cmpS2===UI.cmpS1) UI.cmpS2=(ST.find(s=>s.name!==UI.cmpS1)||ST[1]).name;
+    const X=byName(UI.cmpS1), Y=byName(UI.cmpS2), o=ST.map(s=>[s.name,s.short]);
+    return sec('Compare two stores','Pick two stores to see them side by side. Colours follow the same rule as everywhere else',`<div class="ctrl cmp">${cmpPick('cmpS1',o,X.name,'Store A')}${cmpPick('cmpS2',o,Y.name,'Store B')}</div>${cmpTbl(X,Y,`${X.rank} of ${ST.length}`,`${Y.rank} of ${ST.length}`,X.short,Y.short)}`); }
+  const L=[...AG.list].sort((x,y)=>x.n.localeCompare(y.n)); if(L.length<2) return '';
+  if(!AG.list.find(a=>a.key===UI.cmpA1)) UI.cmpA1=[...AG.list].sort((x,y)=>x.rank-y.rank)[0].key; if(!AG.list.find(a=>a.key===UI.cmpA2)||UI.cmpA2===UI.cmpA1) UI.cmpA2=([...AG.list].sort((x,y)=>x.rank-y.rank).find(a=>a.key!==UI.cmpA1)).key;
+  const X=AG.list.find(a=>a.key===UI.cmpA1), Y=AG.list.find(a=>a.key===UI.cmpA2), o=L.map(a=>[a.key,a.n+' · '+(byName(a.s)?byName(a.s).short:a.s)]);
+  return sec('Compare two agents','Pick two agents to see them side by side',`<div class="ctrl cmp">${cmpPick('cmpA1',o,X.key,'Agent A')}${cmpPick('cmpA2',o,Y.key,'Agent B')}</div>${cmpTbl(X,Y,`${X.rank} of ${AG.list.length}`,`${Y.rank} of ${AG.list.length}`,firstName(X.n),firstName(Y.n))}`); }
 
 /* Dashboard: what needs attention today */
 function alertsList(){
@@ -1089,6 +1155,7 @@ function bind(){
     el.addEventListener('click',go); el.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); }); });
   qa('[data-close]',el=>el.addEventListener('click',e=>{ e.preventDefault(); UI.agSel=null; route(); }));
   qa('[data-planK]',el=>el.addEventListener('click',()=>{ UI.planK=el.dataset.plank; route(); }));
+  qa('[data-cmp]',el=>el.addEventListener('change',()=>{ UI[el.dataset.cmp]=el.value; route(); }));
   qa('[data-ins]',el=>el.addEventListener('click',()=>{ UI.insTab=el.dataset.ins; route(); }));
   qa('[data-goins]',el=>el.addEventListener('click',()=>{ UI.insTab=el.dataset.goins; if(location.hash==='#insights') route(); else location.hash='insights'; window.scrollTo(0,0); }));
   on('idle-more','onclick',()=>{ UI.idleLimit=999; route(); });
