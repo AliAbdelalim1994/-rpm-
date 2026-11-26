@@ -45,7 +45,7 @@ async function push(){
     if(j.code===401){ ADMIN=false; setToken(''); DIRTY=false; setSync('idle'); route(); return; }
     if(j.code===409){ setSync('conflict'); return; }
     if(!j.ok) throw new Error(j.error||'save failed');
-    VERSION=j.version; DIRTY=false; setSync('saved');
+    VERSION=j.version; DIRTY=false; setSync('saved'); setTimeout(syncStoreSnaps,300);
     if(NOTIFY){ const m=NOTIFY; NOTIFY=null; api('notify',{title:st.areaName||'RPM',message:m}).catch(()=>{}); }
   }catch(e){ setSync('offline'); clearTimeout(pushT); pushT=setTimeout(push,8000); } }
 window.addEventListener('online',()=>{ if(DIRTY) push(); });
@@ -69,8 +69,25 @@ async function refreshHist(){ if(HIST_BUSY||!HIST_STALE) return; HIST_BUSY=true;
   try{ await fetchHistory(); ensureSnap(); if(!typing()&&!DIRTY) route(); }catch(e){ } HIST_BUSY=false; }
 function makeSnap(){ const AG=computeAgents(), a={}; AG.list.forEach(o=>{ a[o.key]=[Math.round(o.overall*1000),Math.round(o.comm*1000),Math.round(o.k.acq.m),o.rank,o.rankStore]; }); return {date:AG.upto,snap:{a}}; }
 async function pushSnap(){ if(!ADMIN||!st.agentBase.length) return; try{ const m=makeSnap(); const j=await api('snap',{date:m.date,snap:m.snap}); if(j.ok){ HIST_STALE=true; HV=-1; refreshHist(); } }catch(e){} }
-function ensureSnap(){ try{ if(!ADMIN||!st||!st.agentBase||!st.agentBase.length) return; const d=lastAgentDate(); if(d&&d!==st.closedOn&&!HIST.some(h=>h.d===d)) pushSnap(); }catch(e){} }
+function ensureSnap(){ try{ if(!ADMIN||!st) return; if(st.agentBase&&st.agentBase.length){ const d=lastAgentDate(); if(d&&d!==st.closedOn&&!HIST.some(h=>h.d===d&&h.s&&h.s.a)) pushSnap(); } syncStoreSnaps(); }catch(e){} }
 function histSeries(key){ return HIST.filter(h=>h.s&&h.s.a&&h.s.a[key]).map(h=>({d:h.d,ov:h.s.a[key][0]/1000,rank:h.s.a[key][3],rs:h.s.a[key][4]})); }
+/* =============== saved store snapshots: one per date (company report date or a day of sales), kept in History next to the agents' ones =============== */
+const SSn=h=>h.s&&h.s.s;
+function storeSnapOf(d){ const R=computeStores(d); if(!R.T.elapsed) return null; const o={};
+  R.stores.forEach(x=>{ o[x.name]={o:Math.round(x.overall*1000),c:Math.round(x.comm*1000),r:x.rank,p:Math.round(x.k.acq.proj*1000),a:Math.round(x.k.acq.m),m:Object.fromEntries(KP.map(k=>[k,Math.round(x.k[k].m)]))}; }); return o; }
+let SS_BUSY=false, SS_LAST='';
+async function syncStoreSnaps(){ if(!ADMIN||!st||SS_BUSY||!st.stores||!st.stores.length) return; SS_BUSY=true;
+  try{ const want={}; [st.baseDate,...entryDates()].forEach(d=>{ const o=storeSnapOf(d); if(o) want[d]=o; });
+    const have={}; HIST.forEach(h=>{ if(SSn(h)) have[h.d]=h.s.s; });
+    const items=[], dels=[];
+    Object.keys(want).forEach(d=>{ if(JSON.stringify(have[d])!==JSON.stringify(want[d])) items.push({date:d,part:'s',data:want[d]}); });
+    Object.keys(have).forEach(d=>{ if(d>st.baseDate&&!want[d]) dels.push({date:d,part:'s'}); });
+    const sig=JSON.stringify([items,dels]);
+    if((items.length||dels.length)&&sig!==SS_LAST){ SS_LAST=sig; const j=await api('snaps',{items,dels}); if(j.ok){ HIST_STALE=true; HV=-1; refreshHist(); } }
+  }catch(e){} SS_BUSY=false; }
+function storeSeries(name){ return HIST.filter(h=>SSn(h)&&h.s.s[name]).map(h=>Object.assign({d:h.d},h.s.s[name])); }
+function snapPrev(asOf){ let p=null; for(const h of HIST){ if(h.d<asOf&&SSn(h)) p=h; } if(!p) return null;
+  return {T:{asOf:p.d},stores:st.stores.filter(x=>p.s.s[x.name]).map(x=>{ const v=p.s.s[x.name]; return {name:x.name,overall:v.o/1000,rank:v.r,k:{acq:{proj:v.p/1000}}}; })}; }
 function moveOf(a){ const up=a.T.asOf; let p=null; for(const h of HIST){ if(h.d<up && h.s && h.s.a && h.s.a[a.key]) p=h; } if(!p) return null; const x=p.s.a[a.key]; return {d:p.d, rank:x[3]-a.rank, rs:x[4]-a.rankStore, ov:a.overall-x[0]/1000}; }
 const moveCell = m=> !m||m.rank===0 ? '<span class="mv">–</span>' : m.rank>0 ? '<span class="mv up">▲'+m.rank+'</span>' : '<span class="mv dn">▼'+(-m.rank)+'</span>';
 function spark(vals){ if(vals.length<2) return ''; const w=120,h=28,mn=Math.min(...vals),mx=Math.max(...vals),r=(mx-mn)||1;
@@ -444,14 +461,14 @@ const legend = s=>s.map(x=>`<span class="lg"><i style="background:${x.color}"></
 function hbars(items,max,fmtV){ const m=max||Math.max(1,...items.map(i=>i.v)); return `<div class="hbars">${items.map(i=>`<div class="hrow"><span>${esc(i.l)}</span><span class="bar" role="img" aria-label="${esc(i.l)} ${fmtV(i.v)}"><i style="width:${Math.max(0,i.v)/m*100}%"></i>${i.mark!=null?`<b style="left:${i.mark/m*100}%"></b>`:''}</span><span class="num">${fmtV(i.v)}</span></div>`).join('')}</div>`; }
 
 /* =============== context for the current render =============== */
-const APP_VER='15 · 26 Nov 2026';
+const APP_VER='16 · 26 Nov 2026';
 let CX, ST, A, T, UI={};
 function setStore(v){ UI.store=v; try{localStorage.setItem('rpm-store',v)}catch(e){} }
 function refresh(){
   CX=computeStores(lastDate()); ST=CX.stores; A=CX.A; T=CX.T;
   ST.forEach(s=>s.pp=prepaidOf(s.name,T)); if(!ST.some(s=>s.name===UI.store)) UI.store=ST[0].name;
   const e=entryDates(); const prevDate = e.length>1 ? e[e.length-2] : (e.length===1 ? st.baseDate : null);
-  CX.prev = prevDate ? computeStores(prevDate) : null;
+  CX.prev = prevDate ? computeStores(prevDate) : snapPrev(T.asOf);
 }
 const byName = n=>ST.find(s=>s.name===n);
 const sortedByRank = ()=>[...ST].sort((a,b)=>a.rank-b.rank);
@@ -484,7 +501,7 @@ function rpmSec(){
   const rows=[...R.stores].sort((a,b)=>a.rank-b.rank), A=R.A, a=A.k.acq;
   const acqBar=x=>`<b>${n(x.m)}</b> <span class="muted">${pc(x.pct)}</span>`;
   const mv=(o,k)=>n(o.k[k].m);
-  return sec('RPM '+dl(st.baseDate),'The company report exactly as uploaded · MTD figures, cumulative to '+dl2(st.baseDate)+'), without the sales added since · ranked by final commission',tbl(['#','Store',['Overall','num'],['Final commission','num'],['Acquisition MTD','num'],...FU.map(k=>[KMAP[k].short,'num'])],
+  return sec('RPM '+dl(st.baseDate),'The company report exactly as uploaded · MTD figures, cumulative to '+dl2(st.baseDate)+', without the sales added since · ranked by final commission',tbl(['#','Store',['Overall','num'],['Final commission','num'],['Acquisition MTD','num'],...FU.map(k=>[KMAP[k].short,'num'])],
     rows.map(o=>`<tr><td>${o.rank}</td><td class="name">${stBadge(o)}${esc(o.name)}${dbtn('store',o.name)}</td><td class="num">${pc(o.overall,1)}</td><td class="num">${commCell(o.comm,o.overall)}</td><td class="num">${acqBar(o.k.acq)}</td>${FU.map(k=>`<td class="num">${mv(o,k)}</td>`).join('')}</tr>`).concat(
     `<tr class="area"><td></td><td class="name">${esc(st.areaName)}</td><td class="num">${pc(A.overall,1)}</td><td class="num">${commCell(A.comm,A.overall,true)}</td><td class="num">${acqBar(a)}</td>${FU.map(k=>`<td class="num">${n(A.k[k].m)}</td>`).join('')}</tr>`),{k:[2,3,4]}));
 }
@@ -542,6 +559,7 @@ function viewStore(){
   ${sec('Prepaid control',`Cap ${pc(S().prepCap)} of GAs`,`<div class="tiles tiles3">${tile('Sold prepaid',n(pp.sold),`of ${n(pp.allowed)} allowed`)}${tile('Prepaid % of GAs',pc(pp.pct,1),pp.status)}${tile('Room left',n(pp.avail),'prepaid can still be sold')}</div>`)}
   ${storeShare(s,AGx)}
   ${teamPlan(s,AGx)}
+  ${storeHistSec(s)}
   ${sec('Agents in this store',`${ag.length} agents · company file of ${dl(computeAgents().upto)} · <a href="#agents" data-store="${esc(s.name)}" data-to="agents" style="color:var(--accent)">Open agents view</a>`,agentTable(ag,false))}`;
 }
 
@@ -1068,6 +1086,7 @@ function viewInsights(){
       rows.map(({s,c})=>`<tr><td class="name">${esc(s.short)}${dbtn('store',s.name)}</td><td class="num">${n(whole(c.need))}</td><td class="num">${n(c.run)}</td><td class="num">${n(c.best)}</td><td class="num">${c.reached?dash:c.ratio.toFixed(2)+'×'}</td><td class="num"><span class="chip ${verdictOf(c).t}">${verdictOf(c).l}</span></td><td class="num">${(c.lo*100).toFixed(0)}–${pc(c.hi)}</td><td class="num"><b>${pc(c.p)}</b></td></tr>`),{center:true}))}
     ${raceSec()}
     ${driftSec()}
+    ${momentumSec()}
     ${sec('Team depth and concentration','Typical agent = the middle seller of the store (half of the agents sold more than this). Lagging agents = those who sold less than half of that number',tbl(['Store',['Agents','num'],['Top agent','num'],['Top agent share','num'],['Top 3 share','num'],['Typical agent','num'],['Lagging agents','num']],dep.map(d=>{ const SA=AG.list.filter(a=>a.s===d.s.name), L=SA.map(a=>a.k.acq.m), md=median(L), lag=SA.filter(a=>a.k.acq.m<md*.5).sort((x,y)=>x.k.acq.m-y.k.acq.m), low=lag.length; return `<tr><td class="name">${esc(d.s.short)}</td><td class="num">${d.cnt}</td><td class="num">${d.top?esc(firstName(d.top.n)):dash}</td><td class="num">${d.tot?pc(d.topSh):dash}</td><td class="num">${d.cnt>3&&d.tot?(d.t3>=.65?`<span class="chip warn">${pc(d.t3)}</span>`:pc(d.t3)):dash}</td><td class="num">${n(md)}</td><td class="num">${low?lag.slice(0,3).map(a=>`<span class="chip ${low>=3?'bad':'warn'}">${esc(a.n.split(' ').slice(0,2).join(' '))} · ${n(a.k.acq.m)}</span>`).join(' ')+(low>3?` <span class="muted">+${low-3}</span>`:''):'<span class="muted">None</span>'}</td></tr>`; }),{center:true,k:[1,3,5]}))}
     ${sec('Which weekday sells most','Average acquisitions per saved day, all stores together',have>=3?hbars(wd.filter(x=>x.avg!=null).map(x=>({l:WDN[x.w]+' · '+x.n+' day'+(x.n===1?'':'s'),v:x.avg})),mxw,v=>`<b>${n(v)}</b>`):`<p class="note" style="margin:0">Shows after sales were added on at least 3 different weekdays. So far: ${have}.</p>`)}
     ${cmpSec('stores')}`; }
@@ -1095,6 +1114,24 @@ function raceSec(){
   return sec('Race for the top 3','Final commission gap to the store above and below, and what it takes to pass the store above',
     tbl(['#','Store',['Final commission','num'],['Gap to the store above','num'],['To pass the store above','num'],['Lead over the store below','num']],rows,{center:true,k:[2,3,5]})); }
 /* Insights: projection drift */
+function storeHistSec(s){
+  const r=storeSeries(s.name), ttl='Store history';
+  if(r.length<2) return sec(ttl,'One saved line per company report or day of sales',`<p class="note" style="margin:0">Shows from the second saved day. Every report you upload and every day of sales you add is saved here.</p>`);
+  const rows=r.slice(-31).map((x,i,a)=>({x,pv:i?a[i-1]:(r.length>a.length?r[r.length-a.length-1]:null)})).reverse();
+  const ov=r.map(x=>x.o/1000), best=Math.min(...r.map(x=>x.r));
+  return sec(ttl,'Saved with every company report and every day of sales · newest first',
+   `<p class="note" style="margin:0 0 10px;text-align:center">Overall ${pc(ov[0],1)} → <b>${pc(ov[ov.length-1],1)}</b> · rank ${r[0].r} → <b>${r[r.length-1].r}</b> · best rank ${best} ${spark(ov)}</p>`+
+   tbl(['Date',['Acquisition MTD','num'],['Added','num'],['Overall','num'],['Final commission','num'],['Rank','num']],
+   rows.map(({x,pv})=>`<tr><td class="name">${dl(x.d)}</td><td class="num">${n(x.a)}</td><td class="num ${pv&&x.a-pv.a>0?'plus':pv&&x.a-pv.a<0?'minus':''}">${pv?(x.a-pv.a?(x.a>pv.a?'+':'−')+n(Math.abs(x.a-pv.a)):dash):dash}</td><td class="num">${pc(x.o/1000,1)}</td><td class="num">${pc(x.c/1000,1)}</td><td class="num">${x.r} ${pv?moveCell({rank:pv.r-x.r}):''}</td></tr>`),{center:true,k:[1,3,4]}));
+}
+function momentumSec(){
+  const rows=ST.map(s=>({s,r:storeSeries(s.name)})).filter(x=>x.r.length>=2);
+  if(!rows.length) return sec('Store trend since the first saved day','Overall and rank over the saved days',`<p class="note" style="margin:0">Shows from the second saved day.</p>`);
+  rows.sort((a,b)=>a.s.rank-b.s.rank);
+  return sec('Store trend since the first saved day',`Saved days: ${dl(rows[0].r[0].d)} to ${dl(rows[0].r[rows[0].r.length-1].d)}. Different from the drift table above, which compares only with the day before`,
+   tbl(['Store',['Overall trend','num'],['Change since first','num'],['Rank first → now','num'],['Best rank','num'],['Saved days','num']],
+   rows.map(({s,r})=>{ const f=r[0], l=r[r.length-1], d=(l.o-f.o)/10; return `<tr><td class="name">${esc(s.short)}${dbtn('store',s.name)}</td><td class="num">${spark(r.map(x=>x.o/1000))}</td>${diffCell(d)}<td class="num"><span style="white-space:nowrap">${f.r}→<b>${l.r}</b> ${moveCell({rank:f.r-l.r})}</span></td><td class="num">${Math.min(...r.map(x=>x.r))}</td><td class="num">${r.length}</td></tr>`; }),{center:true,k:[1,2,3]}));
+}
 function driftSec(){
   const pv=CX.prev; if(!pv) return sec('Projection drift','Overall now against the previous saved day',`<p class="note" style="margin:0">Shows after sales are added for a second day, or a second company report is uploaded.</p>`);
   const rows=ST.map(s=>{ const p=pv.stores.find(x=>x.name===s.name); return p?{s,p,d:(s.overall-p.overall)*100,da:(s.k.acq.proj-p.k.acq.proj)*100}:null; }).filter(Boolean).sort((x,y)=>x.d-y.d);
