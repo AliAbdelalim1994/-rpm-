@@ -69,7 +69,7 @@ async function refreshHist(){ if(HIST_BUSY||!HIST_STALE) return; HIST_BUSY=true;
   try{ await fetchHistory(); ensureSnap(); if(!typing()&&!DIRTY) route(); }catch(e){ } HIST_BUSY=false; }
 function makeSnap(){ const AG=computeAgents(), a={}; AG.list.forEach(o=>{ a[o.key]=[Math.round(o.overall*1000),Math.round(o.comm*1000),Math.round(o.k.acq.m),o.rank,o.rankStore]; }); return {date:AG.upto,snap:{a}}; }
 async function pushSnap(){ if(!ADMIN||!st.agentBase.length) return; try{ const m=makeSnap(); const j=await api('snap',{date:m.date,snap:m.snap}); if(j.ok){ HIST_STALE=true; HV=-1; refreshHist(); } }catch(e){} }
-function ensureSnap(){ try{ if(!ADMIN||!st||!st.agentBase||!st.agentBase.length) return; const d=lastAgentDate(); if(d&&!HIST.some(h=>h.d===d)) pushSnap(); }catch(e){} }
+function ensureSnap(){ try{ if(!ADMIN||!st||!st.agentBase||!st.agentBase.length) return; const d=lastAgentDate(); if(d&&d!==st.closedOn&&!HIST.some(h=>h.d===d)) pushSnap(); }catch(e){} }
 function histSeries(key){ return HIST.filter(h=>h.s&&h.s.a&&h.s.a[key]).map(h=>({d:h.d,ov:h.s.a[key][0]/1000,rank:h.s.a[key][3],rs:h.s.a[key][4]})); }
 function moveOf(a){ const up=a.T.asOf; let p=null; for(const h of HIST){ if(h.d<up && h.s && h.s.a && h.s.a[a.key]) p=h; } if(!p) return null; const x=p.s.a[a.key]; return {d:p.d, rank:x[3]-a.rank, rs:x[4]-a.rankStore, ov:a.overall-x[0]/1000}; }
 const moveCell = m=> !m||m.rank===0 ? '<span class="mv">–</span>' : m.rank>0 ? '<span class="mv up">▲'+m.rank+'</span>' : '<span class="mv dn">▼'+(-m.rank)+'</span>';
@@ -444,7 +444,7 @@ const legend = s=>s.map(x=>`<span class="lg"><i style="background:${x.color}"></
 function hbars(items,max,fmtV){ const m=max||Math.max(1,...items.map(i=>i.v)); return `<div class="hbars">${items.map(i=>`<div class="hrow"><span>${esc(i.l)}</span><span class="bar" role="img" aria-label="${esc(i.l)} ${fmtV(i.v)}"><i style="width:${Math.max(0,i.v)/m*100}%"></i>${i.mark!=null?`<b style="left:${i.mark/m*100}%"></b>`:''}</span><span class="num">${fmtV(i.v)}</span></div>`).join('')}</div>`; }
 
 /* =============== context for the current render =============== */
-const APP_VER='12 · 26 Nov 2026';
+const APP_VER='15 · 26 Nov 2026';
 let CX, ST, A, T, UI={};
 function setStore(v){ UI.store=v; try{localStorage.setItem('rpm-store',v)}catch(e){} }
 function refresh(){
@@ -478,6 +478,16 @@ const dbtn=(kind,v,to)=>`<button type="button" class="btn sm" data-${kind}="${es
 /* =============== Dashboard =============== */
 const fuHead = ()=>FU.map(k=>[KMAP[k].short,'num']);
 const fuHeat = s=>FU.map(k=>heat(s.k[k].proj)).join('');
+function srcLbl(upto){ const ds_=entryDates().filter(d=>d<=upto); let t='RPM '+dl(st.baseDate); if(ds_.length){ const a=ds_[0], b=ds_[ds_.length-1]; t+=' + Sales '+(a===b?dl(a):(a.slice(0,7)===b.slice(0,7)?(+a.slice(8))+'–'+dl(b):dl(a)+' – '+dl(b))); } return t; }
+function rpmSec(){
+  const R=computeStores(st.baseDate); if(!R.T.elapsed) return '';
+  const rows=[...R.stores].sort((a,b)=>a.rank-b.rank), A=R.A, a=A.k.acq;
+  const acqBar=x=>`<b>${n(x.m)}</b> <span class="muted">${pc(x.pct)}</span>`;
+  const mv=(o,k)=>n(o.k[k].m);
+  return sec('RPM '+dl(st.baseDate),'The company report exactly as uploaded · MTD figures, cumulative to '+dl2(st.baseDate)+'), without the sales added since · ranked by final commission',tbl(['#','Store',['Overall','num'],['Final commission','num'],['Acquisition MTD','num'],...FU.map(k=>[KMAP[k].short,'num'])],
+    rows.map(o=>`<tr><td>${o.rank}</td><td class="name">${stBadge(o)}${esc(o.name)}${dbtn('store',o.name)}</td><td class="num">${pc(o.overall,1)}</td><td class="num">${commCell(o.comm,o.overall)}</td><td class="num">${acqBar(o.k.acq)}</td>${FU.map(k=>`<td class="num">${mv(o,k)}</td>`).join('')}</tr>`).concat(
+    `<tr class="area"><td></td><td class="name">${esc(st.areaName)}</td><td class="num">${pc(A.overall,1)}</td><td class="num">${commCell(A.comm,A.overall,true)}</td><td class="num">${acqBar(a)}</td>${FU.map(k=>`<td class="num">${n(A.k[k].m)}</td>`).join('')}</tr>`),{k:[2,3,4]}));
+}
 function viewArea(){
   const a=A.k.acq, sorted=sortedByRank(), maxToday=Math.max(1,...ST.map(s=>s.today.acq));
   const near=[...ST].map(s=>({s,nt:nextTier(s,T)})).filter(x=>!x.nt.top).sort((x,y)=>x.nt.gap-y.nt.gap).slice(0,3);
@@ -494,10 +504,11 @@ function viewArea(){
     ${tile('If the month closed today',pc(A.closedToday,1),`Area final commission on MTD overall ${pc(A.mtdOverall,1)} · ${A.paceStatus.toLowerCase()} vs pace ${sgn(A.ahead*100,1,' pts')}`)}
   </div>
   ${alertsSec()}
-  ${sec('Store leaderboard','Ranked by final commission · ★ = top 3 stores · press Details to open the store card',tbl(['#','Store',['Overall','num'],['Final commission','num'],'Acquisition MTD',['Acq proj.','num'],['Today','num'],'Status'],
+  ${sec('Store leaderboard ('+srcLbl(T.asOf)+')','Ranked by final commission · ★ = top 3 stores · press Details to open the store card',tbl(['#','Store',['Overall','num'],['Final commission','num'],'Acquisition MTD',['Acq proj.','num'],['Today','num'],'Status'],
     sorted.map(s=>`<tr><td>${s.rank}</td><td class="name">${stBadge(s)}${esc(s.name)}${dbtn('store',s.name)}</td><td class="num">${pc(s.overall,1)}</td><td class="num">${commCell(s.comm,s.overall)}</td>
     <td>${acqBar(s.k.acq)}</td><td class="num">${pc(s.k.acq.proj,1)}</td><td class="num plus">${s.today.acq?'+'+n(s.today.acq):dash}</td><td>${statusChip(s)}</td></tr>`).concat(
     `<tr class="area"><td></td><td class="name">${esc(st.areaName)}</td><td class="num">${pc(A.overall,1)}</td><td class="num">${commCell(A.comm,A.overall,true)}</td><td>${acqBar(a)}</td><td class="num">${pc(a.proj,1)}</td><td class="num plus">${A.today.acq?'+'+n(A.today.acq):dash}</td><td></td></tr>`),{k:[2,3,5]})) }
+  ${rpmSec()}
   ${sec('Projection heat-map','Projected % of target at month-end pace · green 100%+ · yellow 90% to 99.9% · red below 90%',tbl(['Store',['Acquisition','num'],...fuHead(),['Overall','num'],['Final commission','num']],
     [...ST,A].map(s=>`<tr class="${s===A?'area':''}"><td class="name">${esc(s.name)}</td>${heat(s.k.acq.proj)}${fuHeat(s)}${heat(s.overall)}<td class="num comm">${pc(s.comm,1)}</td></tr>`)))}
   ${T.asOf>st.baseDate? sec(`Sales added on ${dl(T.asOf)}`,`Acquisition (low + high + VF Cash) by store · area total ${n(A.today.acq)}`,hbars([...ST].sort((x,y)=>y.today.acq-x.today.acq).map(s=>({l:s.short,v:s.today.acq})),maxToday,v=>`<b>${n(v)}</b>`)):''}`;
@@ -884,6 +895,18 @@ function addBox(name,unit,money,wt){
   st.boxes.push({id,name,unit:unit||'units',money:!!money}); rebuildKpis();
   st.stores.forEach(s=>{ st.targets[s.name][id]=0; st.storeBase[s.name][id]=0; }); st.set.weights[id]=Math.max(0,+wt||0)/100; return 'ok'; }
 function delBox(id){ st.boxes=st.boxes.filter(b=>b.id!==id); delete st.set.weights[id]; st.stores.forEach(s=>{ delete st.targets[s.name][id]; delete st.storeBase[s.name][id]; }); Object.values(st.daily).forEach(o=>Object.values(o).forEach(x=>delete x[id])); rebuildKpis(); }
+function nextMonthStart(){ const d=D(S().monthStart); return ds(new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))); }
+async function closeMonth(){
+  const nm=nextMonthStart(), base=addDays(nm,-1);
+  const rj=await api('clearhist'); if(!rj.ok) throw new Error(rj.error||'history');
+  HIST=[]; HV=-1; try{ localStorage.removeItem('rpm-hist'); }catch(e){}
+  st.stores.forEach(s=>{ st.storeBase[s.name]=Object.fromEntries(KP.map(k=>[k,0])); st.prepaid[s.name]=[0,0]; });
+  st.daily={}; st.agentDaily={}; st.notes={}; st.baseDate=base; st.agentBaseDate=base; st.closedOn=base;
+  st.agentBase.forEach(a=>{ a.m=Object.fromEntries(KP.map(k=>[k,0])); });
+  S().monthStart=nm; S().holidays=[];
+  st.mine={}; st.mineStore={}; UI.entryDate=null; UI.meDate=null; UI.msDate=null; UI.upload=null; UI.uploadS=null;
+  save();
+}
 function viewSetup(){
   const s=S(), wsum=WK.reduce((a,x)=>a+(s.weights[x]||0),0);
   return `${head('Admin','Setup & targets','<div class="note">Names, boxes, month settings, weights and every store target</div>')}
@@ -899,6 +922,7 @@ function viewSetup(){
     <div class="formrow" style="margin-top:14px"><label class="field">Box name<input type="text" id="nb-name" placeholder="e.g. EPU"></label><label class="field">Unit<input type="text" id="nb-unit" placeholder="e.g. lines" style="width:120px"></label><label class="field">Weight %<input type="number" min="0" max="100" id="nb-w" value="0" style="width:90px"></label><label class="field" style="grid-template-columns:auto 1fr;align-items:center;gap:8px"><input type="checkbox" id="nb-money">Money (EGP)</label><button type="button" class="btn primary" id="nb-add">Add box</button></div>
     <p class="note" style="margin:8px 0 0">After adding: type each store's target in the table below, enter its daily sales in Enter data, and name the column "EPU MTD" / "EPU Target" in the company file so the upload picks it up. Weights across all boxes should add up to 100%.</p>`)}
   ${sec('Month','',`<div class="formrow"><label class="field">Month start date<input type="date" id="s-start" value="${s.monthStart}"></label><label class="field" style="grid-template-columns:auto 1fr;align-items:center;gap:8px"><input type="checkbox" id="s-fri" ${s.fridayHalf?'checked':''}>Count Fridays as half days</label><label class="field" style="min-width:260px">Extra half-day dates (YYYY-MM-DD, comma separated)<input type="text" id="s-hol" value="${esc(s.holidays.join(', '))}" placeholder="2026-11-26"></label></div><p class="note" style="margin:10px 0 0">${monthDays().length} calendar days · ${n(T.total)} effective days · ${n(T.left)} left</p>`)}
+  ${sec('Close month','Use this once, on the last day of the month, after you have finished with its numbers',`<p class="note" style="margin:0 0 10px">It deletes everything for the closing month: all daily sales, the company store report, the company agents numbers, the saved history (ranks and trends), prepaid entries and notes. The month start moves to <b>${dl2(nextMonthStart())}</b>. Stores, agents, targets, weights and rules stay as they are, so you can start entering the new month's daily sales from day 1 and later upload the new targets and the company files. This cannot be undone.</p><button type="button" class="btn danger" id="s-close">${UI.confirmClose?'Click again to delete the month':'Close month and start '+dl2(nextMonthStart())}</button>`)}
   ${sec('Weights and rules','Acquisition weight applies to Low + High + VF Cash together',`<div class="formrow">${WK.map(x=>`<label class="field">${esc(KMAP[x].short)} weight %<input type="number" min="0" max="100" step="1" data-w="${x}" value="${Math.round((s.weights[x]||0)*100)}"></label>`).join('')}<label class="field">Total<input type="text" readonly value="${Math.round(wsum*100)}%" style="width:80px"></label></div>
     ${Math.abs(wsum-1)>.001?'<p class="miss" style="margin:8px 0 0">Weights should add up to 100%.</p>':''}
     <div class="formrow" style="margin-top:12px"><label class="field">Qualify at % (below pays 0)<input type="number" min="0" max="100" data-r="qual" value="${Math.round(s.qual*100)}"></label><label class="field">Low goal %<input type="number" min="0" data-r="lowGoal" value="${Math.round(s.lowGoal*100)}"></label><label class="field">High goal %<input type="number" min="0" data-r="highGoal" value="${Math.round(s.highGoal*100)}"></label><label class="field">Prepaid cap % of GAs<input type="number" min="0" max="100" data-r="prepCap" value="${Math.round(s.prepCap*100)}"></label></div>
@@ -1211,6 +1235,8 @@ function bind(){
   on('nb-add','onclick',()=>{ const r=addBox($('nb-name').value,$('nb-unit').value,$('nb-money').checked,$('nb-w').value); UI.flash=r==='ok'?'Box added. Type its targets below and it appears on every screen.':'Type a box name first.'; if(r==='ok') save(); route(); });
   qa('[data-delbox]',el=>el.addEventListener('click',()=>{ delBox(el.dataset.delbox); UI.flash='Box removed.'; save(); route(); }));
   qa('[data-bn]',el=>el.addEventListener('change',()=>{ const [i,f]=el.dataset.bn.split('|'); const b=st.boxes[+i]; b[f]=el.value.trim()||b[f]; rebuildKpis(); save(); route(); }));
+  on('s-close','onclick',async()=>{ if(!UI.confirmClose){ UI.confirmClose=true; route(); return; } UI.confirmClose=false;
+    try{ await closeMonth(); UI.flash='Month closed. Enter day 1 sales whenever you are ready.'; }catch(e){ UI.flash='Close failed. Nothing was changed. Check the connection and try again.'; } route(); });
   on('s-start','onchange',e=>{ if(e.target.value){ S().monthStart=e.target.value; save(); route(); } });
   on('s-fri','onchange',e=>{ S().fridayHalf=e.target.checked; save(); route(); });
   on('s-hol','onchange',e=>{ S().holidays=e.target.value.split(/[ ,;]+/).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)); save(); route(); });
