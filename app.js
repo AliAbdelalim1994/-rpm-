@@ -461,7 +461,7 @@ const legend = s=>s.map(x=>`<span class="lg"><i style="background:${x.color}"></
 function hbars(items,max,fmtV){ const m=max||Math.max(1,...items.map(i=>i.v)); return `<div class="hbars">${items.map(i=>`<div class="hrow"><span>${esc(i.l)}</span><span class="bar" role="img" aria-label="${esc(i.l)} ${fmtV(i.v)}"><i style="width:${Math.max(0,i.v)/m*100}%"></i>${i.mark!=null?`<b style="left:${i.mark/m*100}%"></b>`:''}</span><span class="num">${fmtV(i.v)}</span></div>`).join('')}</div>`; }
 
 /* =============== context for the current render =============== */
-const APP_VER='16 · 26 Nov 2026';
+const APP_VER='17 · 26 Nov 2026';
 let CX, ST, A, T, UI={};
 function setStore(v){ UI.store=v; try{localStorage.setItem('rpm-store',v)}catch(e){} }
 function refresh(){
@@ -1046,6 +1046,13 @@ function chanceOf(s){
 const verdictOf=c=>c.reached?{t:'good',l:'Reached'}:c.ratio<=1?{t:'good',l:'Comfortable'}:c.ratio<=1.3?{t:'warn',l:'Stretch'}:{t:'bad',l:'Out of reach'};
 function dependency(AG){ return ST.map(s=>{ const L=AG.list.filter(a=>a.s===s.name).sort((x,y)=>y.k.acq.m-x.k.acq.m), tot=L.reduce((t,a)=>t+a.k.acq.m,0), t3=L.slice(0,3).reduce((t,a)=>t+a.k.acq.m,0);
   return {s,cnt:L.length,tot,top:L[0],topSh:tot&&L[0]?L[0].k.acq.m/tot:0,t3:tot?t3/tot:0}; }); }
+/* Acquisitions added on each day, from every source we have: day-to-day change in the saved company numbers (stores, else agents), and the sales days you added (exact, win on the same date) */
+function dayTotals(){ const m={}, DAY=86400000;
+  const add=(ser,over)=>{ for(let i=1;i<ser.length;i++){ const a=ser[i-1], b=ser[i], v=b.v-a.v; if(D(b.d)-D(a.d)===DAY&&v>=0&&(over||!(b.d in m))) m[b.d]=v; } };
+  add(HIST.filter(h=>h.s&&h.s.a).map(h=>({d:h.d,v:Object.values(h.s.a).reduce((t,x)=>t+(+x[2]||0),0)})),false);
+  add(HIST.filter(h=>SSn(h)).map(h=>({d:h.d,v:Object.values(h.s.s).reduce((t,x)=>t+(+x.a||0),0)})),true);
+  entryDates().forEach(d=>{ m[d]=ST.reduce((t,s)=>{ const x=(st.daily[d]||{})[s.name]; return t+(x?(+x.low||0)+(+x.high||0)+(+x.vf||0):0); },0); });
+  return Object.keys(m).sort().map(d=>({d,v:m[d]})); }
 function weekdayStats(rows){ const by={}; rows.forEach(r=>{ const w=D(r.d).getUTCDay(); (by[w]=by[w]||[]).push(r.v); }); return WDO.map(w=>({w,n:(by[w]||[]).length,avg:(by[w]||[]).length?by[w].reduce((t,v)=>t+v,0)/by[w].length:null})); }
 function prevSnap(AG){ let p=null; HIST.forEach(h=>{ if(h.d<AG.upto&&h.s&&h.s.a) p=h; }); return p; }
 function idleAgents(AG){ const p=prevSnap(AG); if(!p||!AG.T.left) return {p:null,list:[]};
@@ -1077,7 +1084,7 @@ function viewInsights(){
   const tabs=seg([['stores','Stores'],['quality','Sales quality'],['agents','Agents']],tab,'data-ins');
   if(tab==='stores'){
     const rows=ST.map(s=>({s,c:chanceOf(s)})).filter(r=>r.c), dep=dependency(AG);
-    const days=entryDates().map(d=>({d,v:ST.reduce((t,s)=>{ const x=(st.daily[d]||{})[s.name]; return t+(x?(+x.low||0)+(+x.high||0)+(+x.vf||0):0); },0)}));
+    const days=dayTotals();
     const wd=weekdayStats(days), mxw=Math.max(1,...wd.map(x=>x.avg||0)), have=wd.filter(x=>x.n).length;
     const tiles=`<div class="tiles">${tile('Likely to reach 100% acquisition',rows.filter(r=>r.c.p>=.5).length+' of '+rows.length,'stores with a 50%+ chance at their current speed','hero')}${tile('Out of reach at this speed',rows.filter(r=>!r.c.reached&&r.c.ratio>1.3).length,'need more than 1.3× their daily speed')}${tile('Most dependent on a few agents',dep.filter(d=>d.cnt>3).sort((x,y)=>y.t3-x.t3)[0]?.s.short||'–',dep.filter(d=>d.cnt>3).length?pc(dep.filter(d=>d.cnt>3).sort((x,y)=>y.t3-x.t3)[0].t3)+' of its acquisitions come from 3 agents':'')}</div>`;
     return `${head(`As of ${dl2(T.asOf)} · ${n(T.left)} days left`,'Insights','<div class="note">What the numbers say beyond the tables</div>')}${tabs}${tiles}
@@ -1088,7 +1095,7 @@ function viewInsights(){
     ${driftSec()}
     ${momentumSec()}
     ${sec('Team depth and concentration','Typical agent = the middle seller of the store (half of the agents sold more than this). Lagging agents = those who sold less than half of that number',tbl(['Store',['Agents','num'],['Top agent','num'],['Top agent share','num'],['Top 3 share','num'],['Typical agent','num'],['Lagging agents','num']],dep.map(d=>{ const SA=AG.list.filter(a=>a.s===d.s.name), L=SA.map(a=>a.k.acq.m), md=median(L), lag=SA.filter(a=>a.k.acq.m<md*.5).sort((x,y)=>x.k.acq.m-y.k.acq.m), low=lag.length; return `<tr><td class="name">${esc(d.s.short)}</td><td class="num">${d.cnt}</td><td class="num">${d.top?esc(firstName(d.top.n)):dash}</td><td class="num">${d.tot?pc(d.topSh):dash}</td><td class="num">${d.cnt>3&&d.tot?(d.t3>=.65?`<span class="chip warn">${pc(d.t3)}</span>`:pc(d.t3)):dash}</td><td class="num">${n(md)}</td><td class="num">${low?lag.slice(0,3).map(a=>`<span class="chip ${low>=3?'bad':'warn'}">${esc(a.n.split(' ').slice(0,2).join(' '))} · ${n(a.k.acq.m)}</span>`).join(' ')+(low>3?` <span class="muted">+${low-3}</span>`:''):'<span class="muted">None</span>'}</td></tr>`; }),{center:true,k:[1,3,5]}))}
-    ${sec('Which weekday sells most','Average acquisitions per saved day, all stores together',have>=3?hbars(wd.filter(x=>x.avg!=null).map(x=>({l:WDN[x.w]+' · '+x.n+' day'+(x.n===1?'':'s'),v:x.avg})),mxw,v=>`<b>${n(v)}</b>`):`<p class="note" style="margin:0">Shows after sales were added on at least 3 different weekdays. So far: ${have}.</p>`)}
+    ${sec('Which weekday sells most','Average acquisitions per day, all stores together · from the day-to-day change in the company reports and your daily sales',have>=3?hbars(wd.filter(x=>x.avg!=null).map(x=>({l:WDN[x.w]+' · '+x.n+' day'+(x.n===1?'':'s'),v:x.avg})),mxw,v=>`<b>${n(v)}</b>`):`<p class="note" style="margin:0">Shows once there are numbers for at least 3 different weekdays (company reports or sales on consecutive days). So far: ${have}.</p>`)}
     ${cmpSec('stores')}`; }
   if(tab==='quality') return qualityView(tabs);
   /* agents */
