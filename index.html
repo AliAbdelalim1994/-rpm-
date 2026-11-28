@@ -45,6 +45,8 @@ h1{font-size:24px} h2{font-size:16px} h3{font-size:14px}
 .sec{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
 .sec-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .sec-h p{margin:0;color:var(--muted);font-size:12px}
+.xbtn{margin-left:auto}@media(max-width:720px){.sec-h .btn.xbtn{display:block;margin:8px 0 0 auto;width:auto}}.xm{position:fixed;z-index:80;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.14);min-width:180px}.xm button{display:block;width:100%;text-align:left;background:none;border:0;padding:10px 12px;border-radius:8px;font:inherit;color:inherit;cursor:pointer}.xm button:hover{background:var(--bg,#f2f5f7)}
+
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
 .tile.hero{background:var(--accent-soft);border-color:var(--accent)}
@@ -336,7 +338,7 @@ td.num,th.num{text-align:center}
 <div class="wrap"><footer id="foot"></footer></div>
 <script src="./config.js"></script>
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-<script src="./app.js?v=17"></script>
+<script src="./app.js?v=19"></script>
 <script src="./push.js"></script>
 </body>
 </html>

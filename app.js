@@ -434,7 +434,8 @@ const tbl = (cols, rows, o={})=>{ const labels=cols.map((c,i)=>{ const l=stripTa
       if(ctr&&!cs) at=/class="/.test(at)?at.replace('class="','class="ctr '):at+' class="ctr"';
       if(isK) at=/class="/.test(at)?at.replace('class="','class="k '):at+' class="k"'; return `<td${at} data-l="${esc(lab)}">`; }).replace(/<td([^>]*) data-l="([^"]*commission[^"]*)">([\s\S]*?)<\/td>/gi,(m,at,lab,inner)=>{ const mm=/^\s*(\d+(?:\.\d+)?)%/.exec(stripTags(inner)); if(!mm||/heat/.test(at)||!/^(final )?commission( now| at next)?$|^commission$/i.test(lab.trim())) return m; const c=tone(parseFloat(mm[1])/100); at=/class="/.test(at)?at.replace('class="','class="heat '+c+' '):at+' class="heat '+c+'"'; return `<td${at} data-l="${lab}">${inner}</td>`; }); });
   return `<div class="scroll"><table class="rt${flat?' flat':''}"><thead>${o.groups?`<tr>${o.groups}</tr>`:''}<tr>${cols.map((c,ci)=>{ const [l,cl]=Array.isArray(c)?c:[c,'']; return `<th class="${cl}${(CTR.test(stripTags(l))||(o.center&&ci>0))?' ctr':''}">${l}</th>`}).join('')}</tr></thead><tbody>${rr.join('')||`<tr><td colspan="${cols.length}" class="muted">Nothing to show.</td></tr>`}</tbody></table></div>`; };
-const sec = (title,sub,body,extra='')=>`<section class="sec ${extra}"><div class="sec-h"><h2>${title}</h2>${sub?`<p>${sub}</p>`:''}</div>${body}</section>`;
+const nv=v=>+String(v==null?'':v).replace(/[,\s]/g,''), thou=v=>(v===''||v==null||isNaN(+v))?'':(+v).toLocaleString('en-US',{maximumFractionDigits:0});
+const sec = (title,sub,body,extra='')=>`<section class="sec ${extra}"><div class="sec-h"><h2>${title}</h2>${sub?`<p>${sub}</p>`:''}${body.indexOf('<table')>=0&&!XP_SKIP.includes(CUR)?'<button type="button" class="btn sm xbtn" data-exp aria-label="Export">Export</button>':''}</div>${body}</section>`;
 const head = (eb,title,right='')=>`<div class="head"><div><div class="eyebrow">${eb}</div><h1>${title}</h1></div>${right}</div>`;
 const tile = (eb,v,s,cls='',extra='')=>`<div class="tile ${cls}"><div class="eyebrow">${eb}</div><div class="v">${v}</div><div class="s">${s}</div>${extra}</div>`;
 const seg = (items,cur,attr)=>`<div class="seg" role="group">${items.map(([k,l])=>`<button type="button" ${attr}="${k}" aria-pressed="${k===cur}">${l}</button>`).join('')}</div>`;
@@ -461,7 +462,7 @@ const legend = s=>s.map(x=>`<span class="lg"><i style="background:${x.color}"></
 function hbars(items,max,fmtV){ const m=max||Math.max(1,...items.map(i=>i.v)); return `<div class="hbars">${items.map(i=>`<div class="hrow"><span>${esc(i.l)}</span><span class="bar" role="img" aria-label="${esc(i.l)} ${fmtV(i.v)}"><i style="width:${Math.max(0,i.v)/m*100}%"></i>${i.mark!=null?`<b style="left:${i.mark/m*100}%"></b>`:''}</span><span class="num">${fmtV(i.v)}</span></div>`).join('')}</div>`; }
 
 /* =============== context for the current render =============== */
-const APP_VER='17 · 26 Nov 2026';
+const APP_VER='19 · 26 Nov 2026';
 let CX, ST, A, T, UI={};
 function setStore(v){ UI.store=v; try{localStorage.setItem('rpm-store',v)}catch(e){} }
 function refresh(){
@@ -850,7 +851,7 @@ function parseUpload(rows,kind){
 }
 function entryGridStores(date){
   const ex=st.daily[date]||{};
-  return tbl(['Store',...KP.map(k=>[KMAP[k].short+(KMAP[k].money?' (EGP)':''),'num'])], st.stores.map((s,i)=>`<tr><td class="name">${esc(s.name)}</td>${KP.map(k=>`<td class="num"><input type="number" inputmode="numeric" min="0" step="1" id="in-${i}-${k}" value="${ex[s.name]&&ex[s.name][k]!=null?ex[s.name][k]:''}" placeholder="0" aria-label="${esc(s.short)} ${KMAP[k].short}"></td>`).join('')}</tr>`));
+  return tbl(['Store',...KP.map(k=>[KMAP[k].short+(KMAP[k].money?' (EGP)':''),'num'])], st.stores.map((s,i)=>`<tr><td class="name">${esc(s.name)}</td>${KP.map(k=>`<td class="num"><input type="text" inputmode="numeric" data-th autocomplete="off" id="in-${i}-${k}" value="${ex[s.name]&&ex[s.name][k]!=null?thou(ex[s.name][k]):''}" placeholder="0" aria-label="${esc(s.short)} ${KMAP[k].short}"></td>`).join('')}</tr>`));
 }
 function mapTable(r){ return tbl(['Field in the app','Header in your file','Column','Status'],r.CD.map(d=>{ const i=r.map[d.id]; return `<tr><td>${d.label}${d.req?'':' <span class="muted">(optional)</span>'}</td><td>${i>=0?esc(r.hdr[i]):'<span class="muted">not found</span>'}</td><td>${i>=0?colLetter(i):''}</td><td>${i>=0?'<span class="ok">Matched</span>':d.req?'<span class="miss">Missing</span>':'<span class="muted">Skipped</span>'}</td></tr>`; })); }
 function uploadBlock(kind,up,first,lastD){
@@ -945,7 +946,7 @@ function viewSetup(){
     ${Math.abs(wsum-1)>.001?'<p class="miss" style="margin:8px 0 0">Weights should add up to 100%.</p>':''}
     <div class="formrow" style="margin-top:12px"><label class="field">Qualify at % (below pays 0)<input type="number" min="0" max="100" data-r="qual" value="${Math.round(s.qual*100)}"></label><label class="field">Low goal %<input type="number" min="0" data-r="lowGoal" value="${Math.round(s.lowGoal*100)}"></label><label class="field">High goal %<input type="number" min="0" data-r="highGoal" value="${Math.round(s.highGoal*100)}"></label><label class="field">Prepaid cap % of GAs<input type="number" min="0" max="100" data-r="prepCap" value="${Math.round(s.prepCap*100)}"></label></div>
     <p class="note" style="margin:10px 0 0">Commission tiers: ${S().tiers.map(t=>`up to ${pc(t.upTo)} +${Math.round(t.bonus*100)} pts`).join(' · ')} · up to ${pc(S().flatUpTo)} flat ${pc(S().flatVal)} · above that the raw overall. See <a href="#next" style="color:var(--accent)">Next commission tier</a>.</p>`)}
-  ${sec('Store targets','Monthly target per store and KPI',tbl(['Store',...KP.map(k=>[KMAP[k].short+(KMAP[k].money?' (EGP)':''),'num']),['Total acquisition','num']],st.stores.map(d=>{ const t=st.targets[d.name]; return `<tr><td class="name">${esc(d.name)}</td>${KP.map(k=>`<td class="num"><input type="number" min="0" data-t="${esc(d.name)}|${k}" value="${t[k]||0}" aria-label="${esc(d.short)} ${esc(KMAP[k].short)} target"></td>`).join('')}<td class="num"><b>${n((t.low||0)+(t.high||0)+(t.vf||0))}</b></td></tr>`}))) }`;
+  ${sec('Store targets','Monthly target per store and KPI',tbl(['Store',...KP.map(k=>[KMAP[k].short+(KMAP[k].money?' (EGP)':''),'num']),['Total acquisition','num']],st.stores.map(d=>{ const t=st.targets[d.name]; return `<tr><td class="name">${esc(d.name)}</td>${KP.map(k=>`<td class="num"><input type="text" inputmode="numeric" data-th autocomplete="off" data-t="${esc(d.name)}|${k}" value="${thou(t[k]||0)}" aria-label="${esc(d.short)} ${esc(KMAP[k].short)} target"></td>`).join('')}<td class="num"><b>${n((t.low||0)+(t.high||0)+(t.vf||0))}</b></td></tr>`}))) }`;
 }
 
 /* =============== Employee view =============== */
@@ -981,7 +982,7 @@ function viewMe(){
   </div>
   ${jumpBar([['today','Today'],['commission','Commission'],['pace','Pace'],['products','Products'],['compare','Compare'],['tools','Simulator'],['details','Details']])}
   ${grp('today','Today','What to sell now, and where to add it',todayCard(me,date,ex)+'<div id="me-add"></div>'+sec('Add my sales for a day','Only you see these. The manager and area screens keep showing the company file.',`<div class="formrow" style="margin-bottom:12px"><label class="field">Date<input type="date" id="me-date" value="${date}" min="${addDays(st.agentBaseDate,1)}" max="${lastD}"></label></div>
-    <div class="addgrid">${KP.map(k=>`<label class="field">${esc(KMAP[k].short)}${KMAP[k].money?' (EGP)':''}<input type="number" inputmode="numeric" min="0" id="me-${k}" value="${ex[k]!=null?ex[k]:''}" placeholder="0"></label>`).join('')}</div>
+    <div class="addgrid">${KP.map(k=>`<label class="field">${esc(KMAP[k].short)}${KMAP[k].money?' (EGP)':''}<input type="text" inputmode="numeric" data-th autocomplete="off" id="me-${k}" value="${ex[k]!=null?thou(ex[k]):''}" placeholder="0"></label>`).join('')}</div>
     <div class="ctrl" style="margin-top:12px"><button type="button" class="btn primary" id="me-save">Save my day</button>${(st.mine[me.key]||{})[date]?'<button type="button" class="btn danger" id="me-del">Delete this day</button>':''}</div>`))}
   ${grp('commission','My commission','Where I stand and what moves it',planCard(me,me.T)+ladderCard(me))}
   ${grp('pace','Pace and forecast','Am I fast enough, and where will I finish',paceCard(me)+rangeCard(me)+weekCard(me))}
@@ -1019,7 +1020,7 @@ function viewMyStore(){
     ${tile('Official says',pc(off.comm,1),`overall ${pc(off.overall,1)} · as of ${dl(lastDate())}`)}
   </div>
   ${sec('Add my store sales for a day','Only I see these.',`<div class="formrow" style="margin-bottom:12px"><label class="field">Date<input type="date" id="ms-date" value="${date}" min="${addDays(st.baseDate,1)}" max="${lastD}"></label></div>
-    <div class="addgrid">${KP.map(k=>`<label class="field">${esc(KMAP[k].short)}${KMAP[k].money?' (EGP)':''}<input type="number" inputmode="numeric" min="0" id="ms-${k}" value="${ex[k]!=null?ex[k]:''}" placeholder="0"></label>`).join('')}</div>
+    <div class="addgrid">${KP.map(k=>`<label class="field">${esc(KMAP[k].short)}${KMAP[k].money?' (EGP)':''}<input type="text" inputmode="numeric" data-th autocomplete="off" id="ms-${k}" value="${ex[k]!=null?thou(ex[k]):''}" placeholder="0"></label>`).join('')}</div>
     <div class="ctrl" style="margin-top:12px"><button type="button" class="btn primary" id="ms-save">Save my day</button>${(st.mineStore[me.name]||{})[date]?'<button type="button" class="btn danger" id="ms-del">Delete this day</button>':''}</div>
     <p class="note" style="margin:8px 0 0">If the admin later saves the same date in Enter data, the official numbers take over for that day.</p>`)}
   ${sec('My numbers','Official numbers plus what I added',tbl(['KPI',['Target','num'],['Official MTD','num'],['I added','num'],['My total','num'],'My %',['Projection','num'],['Daily req.','num']],
@@ -1187,6 +1188,131 @@ function alertsList(){
 function alertsSec(){ const L=alertsList();
   return sec('Needs attention today','Auto-checked from the latest numbers',L.length?`<div class="alerts">${L.slice(0,8).map(a=>`<div class="al"><i class="dot ${a.t}"></i><span>${esc(a.x)}</span>${a.s?dbtn('store',a.s.name):a.to?`<button type="button" class="btn sm" data-goins="agents">Open</button>`:''}</div>`).join('')}</div>`:'<p class="note" style="margin:0">Nothing needs attention right now.</p>'); }
 
+/* =============== Export: image and PDF for everyone, Excel for the admin only. Built from the tables on the screen, no libraries =============== */
+const XP_SKIP=['entry','setup','me','mystore'];
+const xpSlug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,50)||'table';
+const xpNum=s=>{ const m=String(s).trim().match(/^([+−-]?)(\d[\d,]*)(\.\d+)?\s*(%|×)?$/); if(!m) return null; const dec=(m[3]||'').length?m[3].length-1:0; let v=parseFloat(m[2].replace(/,/g,'')+(m[3]||'')); if(m[1]==='-'||m[1]==='−') v=-v; const pct=m[4]==='%', times=m[4]==='×'; return {v:pct?v/100:v,dec,pct,times}; };
+const xpRgba=s=>{ const m=String(s||'').match(/rgba?\(([^)]+)\)/); if(!m) return null; const p=m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); const a=p.length>3?p[3]:1; return a>0.03?{r:p[0],g:p[1],b:p[2],a}:null; };
+function xpLeafs(td){ const c=td.cloneNode(true); c.querySelectorAll('button,.topb,.btn,svg,style,script,input,select').forEach(x=>x.remove()); const out=[], w=document.createTreeWalker(c,NodeFilter.SHOW_TEXT); let n; while((n=w.nextNode())){ const t=n.nodeValue.replace(/\s+/g,' ').trim(); if(t&&!/^[–—-]$/.test(t)) out.push(t); } return out; }
+function xpCellColors(td){ const tint=c=>c&&(Math.max(c.r,c.g,c.b)-Math.min(c.r,c.g,c.b))>14?c:null;
+  const base=td.parentElement&&td.parentElement.children[0]?getComputedStyle(td.parentElement.children[0]).backgroundColor:'';
+  let el=td, own=getComputedStyle(td).backgroundColor, bg=own===base&&td!==td.parentElement.children[0]?null:tint(xpRgba(own));
+  if(!bg){ for(const d of td.querySelectorAll('*')){ if(d.closest('.topb,.btn,button')||d.offsetWidth<=0||!d.textContent.trim()) continue; const b=tint(xpRgba(getComputedStyle(d).backgroundColor)); if(b){ bg=b; el=d; break; } } }
+  return {bg,fg:bg?getComputedStyle(el).color:null}; }
+function xpCollect(secEl){
+  const out=[];
+  secEl.querySelectorAll('table').forEach(t=>{
+    let heads=[...t.querySelectorAll('thead th')].map(h=>h.textContent.replace(/\s+/g,' ').trim());
+    const trs=[...t.querySelectorAll('tr')].filter(r=>!r.querySelector('th')&&r.querySelectorAll('td').length>=2);
+    if(!trs.length) return; const nC=Math.max(heads.length,...trs.map(r=>r.children.length)); while(heads.length<nC) heads.push('');
+    const cols=[];
+    for(let j=0;j<nC;j++){
+      const cells=trs.map(r=>{ const td=r.children[j]; return td?{parts:xpLeafs(td),col:xpCellColors(td)}:{parts:[],col:{}}; });
+      const maxP=Math.min(3,Math.max(1,...cells.map(c=>c.parts.length)));
+      for(let k=0;k<maxP;k++){
+        const vals=cells.map(c=>{ const s=c.parts[k]; if(s==null) return {}; const x=xpNum(s); return x?{txt:s,num:x.v,dec:x.dec,pct:x.pct,times:x.times,col:k===0?c.col:{}}:{txt:s,col:k===0?c.col:{}}; });
+        const nums=vals.filter(v=>v.num!=null), pcts=nums.filter(v=>v.pct).length, isNum=nums.length>=Math.max(1,vals.filter(v=>v.txt!=null).length/2);
+        const hdr=k===0?heads[j]:(isNum?(pcts>nums.length/2?heads[j]+' %':heads[j]+' ('+(k+1)+')'):'');
+        const dec=Math.max(0,...nums.map(v=>v.dec)); const pc=pcts>nums.length/2;
+        const colored=pc&&vals.filter(v=>v.num!=null&&v.col&&v.col.bg).length>=Math.max(1,nums.length/2);
+        cols.push({h:hdr,num:isNum,pct:pc,dec:Math.min(dec,3),colored,left:!isNum,vals:vals.map(v=>isNum&&v.num!=null?v:(v.txt!=null?{txt:v.txt,col:v.col,txtOnly:true}:{}))});
+      }
+    }
+    const area=trs.map(r=>r.classList.contains('area')||r.classList.contains('total'));
+    out.push({cols,rows:trs.length,area});
+  });
+  return out;
+}
+function xpInfo(secEl){ const h=secEl.querySelector('h2'), p=secEl.querySelector('.sec-h p'); return {title:h?h.textContent.replace(/\s+/g,' ').trim():'Report',sub:p?p.textContent.replace(/\s+/g,' ').trim():'',tables:xpCollect(secEl)}; }
+function xpName(info,ext){ return xpSlug(info.title)+'-'+T.asOf+'.'+ext; }
+function xpSave(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500); }
+/* ---- image ---- */
+function xpCanvas(info){
+  const S=2, pad=36, rgb=c=>`rgb(${c.r},${c.g},${c.b})`, FONT='system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif';
+  const meas=document.createElement('canvas').getContext('2d');
+  const txt=(v)=>v.txt!=null?v.txt:'';
+  let f=26, layout;
+  for(;;){
+    const hf=`600 ${Math.round(f*.72)}px ${FONT}`, bf=`400 ${f}px ${FONT}`, ab=`600 ${f}px ${FONT}`;
+    layout=info.tables.map(t=>{ const w=t.cols.map(c=>{ meas.font=hf; let m=meas.measureText(c.h).width; c.vals.forEach((v,i)=>{ meas.font=t.area[i]?ab:bf; m=Math.max(m,meas.measureText(txt(v)).width); }); return Math.max(f*2.6,Math.ceil(m+f*1.3)); }); return {w,tw:w.reduce((a,b)=>a+b,0)}; });
+    const tw=Math.max(...layout.map(l=>l.tw),0); if(tw<=1500||f<=15) break; f-=2;
+  }
+  const hf=`600 ${Math.round(f*.72)}px ${FONT}`, bf=`400 ${f}px ${FONT}`, ab=`600 ${f}px ${FONT}`, rh=Math.round(f*2.05), hh=Math.round(f*1.9);
+  const tw=Math.max(...layout.map(l=>l.tw),0), W=Math.max(Math.round(tw+pad*2),640);
+  const wrap=(s,font,maxW)=>{ meas.font=font; const words=s.split(' '), lines=[]; let cur=''; words.forEach(w=>{ const t=cur?cur+' '+w:w; if(meas.measureText(t).width>maxW&&cur){ lines.push(cur); cur=w; } else cur=t; }); if(cur) lines.push(cur); return lines; };
+  const tf=`600 ${Math.round(f*1.2)}px ${FONT}`, sf=`400 ${Math.round(f*.72)}px ${FONT}`;
+  const subL=info.sub?wrap(info.sub,sf,W-pad*2):[]; let H=pad+Math.round(f*1.5)+subL.length*Math.round(f*.95)+Math.round(f*.7);
+  info.tables.forEach(t=>{ H+=hh+t.rows*rh+Math.round(f*.8); }); const legend=info.tables.some(t=>t.cols.some(c=>c.colored)); H+=Math.round(f*(legend?2.6:1.8))+pad-10;
+  const cv=document.createElement('canvas'); cv.width=W*S; cv.height=Math.round(H*S); const g=cv.getContext('2d'); g.scale(S,S); g.fillStyle='#fff'; g.fillRect(0,0,W,H); g.textBaseline='middle';
+  let y=pad; g.fillStyle='#111'; g.font=tf; g.textAlign='left'; g.fillText(info.title,pad,y+f*.7); g.font=sf; g.fillStyle='#667'; g.textAlign='right'; g.fillText(dl2(T.asOf),W-pad,y+f*.7);
+  y+=Math.round(f*1.5); g.textAlign='left'; subL.forEach(l=>{ g.fillStyle='#667'; g.font=sf; g.fillText(l,pad,y+f*.35); y+=Math.round(f*.95); }); y+=Math.round(f*.7);
+  info.tables.forEach((t,ti)=>{ const L=layout[ti], x0=Math.round((W-L.tw)/2);
+    g.fillStyle='#eef2f5'; g.fillRect(x0,y,L.tw,hh); let x=x0;
+    t.cols.forEach((c,j)=>{ g.fillStyle='#445'; g.font=hf; g.textAlign=c.left?'left':'center'; g.fillText(c.h,c.left?x+f*.6:x+L.w[j]/2,y+hh/2); x+=L.w[j]; }); y+=hh;
+    for(let i=0;i<t.rows;i++){ if(i%2) { g.fillStyle='#f8fafb'; g.fillRect(x0,y,L.tw,rh); } if(t.area[i]){ g.fillStyle='#e6edf1'; g.fillRect(x0,y,L.tw,rh); }
+      g.strokeStyle='#e3e8ec'; g.lineWidth=1; g.beginPath(); g.moveTo(x0,y+rh-.5); g.lineTo(x0+L.tw,y+rh-.5); g.stroke(); x=x0;
+      t.cols.forEach((c,j)=>{ const v=c.vals[i]||{}, col=v.col||{}; if(col.bg){ g.fillStyle=`rgba(${col.bg.r},${col.bg.g},${col.bg.b},${Math.min(1,col.bg.a)})`; g.fillRect(x+4,y+5,L.w[j]-8,rh-10); }
+        const s=txt(v); if(s){ g.font=t.area[i]?ab:bf; g.fillStyle=col.bg&&col.fg?col.fg:'#16202a'; g.textAlign=c.left?'left':'center'; g.fillText(s,c.left?x+f*.6:x+L.w[j]/2,y+rh/2+1); } x+=L.w[j]; });
+      y+=rh; } y+=Math.round(f*.8); });
+  g.textAlign='left'; g.font=`400 ${Math.round(f*.62)}px ${FONT}`; g.fillStyle='#889';
+  if(legend){ g.fillText('Red under 90%  ·  yellow 90–99.9%  ·  green 100% and above',pad,y+f*.2); y+=Math.round(f*.8); }
+  g.fillText(st.areaName+' RPM  ·  created '+new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}),pad,y+f*.2);
+  return cv;
+}
+async function xpImage(info){ const cv=xpCanvas(info), name=xpName(info,'png'); const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+  try{ const file=new File([blob],name,{type:'image/png'}); if(MQ.matches&&navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:info.title}); return; } }catch(e){ if(e&&e.name==='AbortError') return; }
+  xpSave(blob,name); }
+/* ---- pdf: the same picture placed on A4 pages ---- */
+function xpPdf(cv){
+  const land=cv.width>cv.height*1.15, PW=land?842:595, PH=land?595:842, M=24, sc=(PW-2*M)/cv.width, sliceH=Math.floor((PH-2*M)/sc), pages=[];
+  for(let y=0;y<cv.height;y+=sliceH){ const h=Math.min(sliceH,cv.height-y), c=document.createElement('canvas'); c.width=cv.width; c.height=h; const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,h); g.drawImage(cv,0,y,cv.width,h,0,0,cv.width,h);
+    const b64=c.toDataURL('image/jpeg',.92).split(',')[1], bin=atob(b64), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); pages.push({u,w:c.width,h}); }
+  const enc=new TextEncoder(), chunks=[], offs=[]; let len=0; const put=d=>{ const u=typeof d==='string'?enc.encode(d):d; chunks.push(u); len+=u.length; };
+  const obj=(n,fn)=>{ offs[n]=len; put(n+' 0 obj\n'); fn(); put('\nendobj\n'); };
+  put('%PDF-1.4\n'); const N=pages.length;
+  obj(1,()=>put('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2,()=>put('<< /Type /Pages /Count '+N+' /Kids ['+pages.map((_,i)=>(3+i*3)+' 0 R').join(' ')+'] >>'));
+  pages.forEach((p,i)=>{ const pn=3+i*3, cn=pn+1, im=pn+2, dw=p.w*sc, dh=p.h*sc, content=`q ${dw.toFixed(2)} 0 0 ${dh.toFixed(2)} ${M} ${(PH-M-dh).toFixed(2)} cm /Im0 Do Q`;
+    obj(pn,()=>put(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 ${im} 0 R >> >> /Contents ${cn} 0 R >>`));
+    obj(cn,()=>put(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+    obj(im,()=>{ put(`<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.u.length} >>\nstream\n`); put(p.u); put('\nendstream'); }); });
+  const xr=len, tot=3+N*3; put('xref\n0 '+tot+'\n0000000000 65535 f \n'); for(let i=1;i<tot;i++) put(String(offs[i]).padStart(10,'0')+' 00000 n \n'); put('trailer\n<< /Size '+tot+' /Root 1 0 R >>\nstartxref\n'+xr+'\n%%EOF');
+  return new Blob(chunks,{type:'application/pdf'});
+}
+function xpPdfFile(info){ xpSave(xpPdf(xpCanvas(info)),xpName(info,'pdf')); }
+/* ---- excel (.xlsx), real percentages and the company colour rule ---- */
+const XCRC=(()=>{ const t=[]; for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return b=>{ let c=0xFFFFFFFF; for(let i=0;i<b.length;i++) c=t[(c^b[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }; })();
+function xpZip(files){ const enc=new TextEncoder(), chunks=[], cen=[]; let off=0; const w=(a)=>{ chunks.push(a); off+=a.length; };
+  const u16=v=>[v&255,(v>>8)&255], u32=v=>[v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255];
+  files.forEach(f=>{ const nm=enc.encode(f.name), d=enc.encode(f.data), crc=XCRC(d), hdr=new Uint8Array([0x50,0x4b,3,4,20,0,0,0,0,0,0,0,0x21,0,...u32(crc),...u32(d.length),...u32(d.length),...u16(nm.length),0,0]); cen.push({nm,crc,len:d.length,off}); w(hdr); w(nm); w(d); });
+  const cs=off; cen.forEach(c=>{ w(new Uint8Array([0x50,0x4b,1,2,20,0,20,0,0,0,0,0,0,0,0x21,0,...u32(c.crc),...u32(c.len),...u32(c.len),...u16(c.nm.length),0,0,0,0,0,0,0,0,0,0,0,0,...u32(c.off)])); w(c.nm); });
+  const ce=off-cs; w(new Uint8Array([0x50,0x4b,5,6,0,0,0,0,...u16(cen.length),...u16(cen.length),...u32(ce),...u32(cs),0,0])); return new Blob(chunks,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); }
+const xe=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'');
+const xcol=i=>{ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; };
+function xpXlsx(info){
+  const fmts=[], xfs=[{f:0,b:0,a:'left'}], xfId=(fmt,b,a)=>{ const key=fmt+'|'+b+'|'+a; let i=xfs.findIndex(x=>x.key===key); if(i<0){ let fi=0; if(fmt){ fi=fmts.indexOf(fmt); if(fi<0){ fmts.push(fmt); fi=fmts.length-1; } fi=164+fi; } xfs.push({key,f:fi,b,a}); i=xfs.length-1; } return i; };
+  xfs[0].key='0|0|left'; const hdrX=xfId('',1,'center'), txtX=xfId('',0,'left'), txtB=xfId('',1,'left'); const sheets=[], used={};
+  info.tables.forEach((t,ti)=>{ let nm=(info.tables.length>1?(ti+1)+' ':'')+info.title.replace(/[\\\/\?\*\[\]:]/g,' ').trim(); nm=nm.slice(0,28)||'Sheet'; while(used[nm.toLowerCase()]) nm=nm.slice(0,26)+'_'+ti; used[nm.toLowerCase()]=1;
+    const rows=[], widths=t.cols.map(c=>Math.max(8,String(c.h).length+3)); const R=t.rows;
+    rows.push('<row r="1" ht="22" customHeight="1">'+t.cols.map((c,j)=>`<c r="${xcol(j)}1" s="${hdrX}" t="inlineStr"><is><t>${xe(c.h||' ')}</t></is></c>`).join('')+'</row>');
+    for(let i=0;i<R;i++){ rows.push(`<row r="${i+2}">`+t.cols.map((c,j)=>{ const v=c.vals[i]||{}, ref=xcol(j)+(i+2), b=t.area[i]?1:0; if(v.num!=null){ const fmt=v.pct?(c.dec?'0.'+'0'.repeat(c.dec)+'%':'0%'):v.times?'0.00"×"':(c.dec?'#,##0.'+'0'.repeat(c.dec):'#,##0'); widths[j]=Math.max(widths[j],String(v.txt).length+3); return `<c r="${ref}" s="${xfId(fmt,b,'center')}"><v>${+v.num.toFixed(8)}</v></c>`; } if(v.txt!=null){ widths[j]=Math.max(widths[j],String(v.txt).length+3); return `<c r="${ref}" s="${b?txtB:txtX}" t="inlineStr"><is><t>${xe(v.txt)}</t></is></c>`; } return ''; }).join('')+'</row>'); }
+    let cf='', pr=1; t.cols.forEach((c,j)=>{ if(!c.colored||!R) return; const L=xcol(j), a=L+'2', rng=`${L}2:${L}${R+1}`; cf+=`<conditionalFormatting sqref="${rng}"><cfRule type="expression" dxfId="0" priority="${pr++}"><formula>AND(ISNUMBER(${a}),${a}&lt;0.9)</formula></cfRule><cfRule type="expression" dxfId="1" priority="${pr++}"><formula>AND(ISNUMBER(${a}),${a}&gt;=0.9,${a}&lt;1)</formula></cfRule><cfRule type="expression" dxfId="2" priority="${pr++}"><formula>AND(ISNUMBER(${a}),${a}&gt;=1)</formula></cfRule></conditionalFormatting>`; });
+    sheets.push({nm,xml:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"${ti?'':' tabSelected="1"'}><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols>${widths.map((w,j)=>`<col min="${j+1}" max="${j+1}" width="${Math.min(40,w+2)}" customWidth="1"/>`).join('')}</cols><sheetData>${rows.join('')}</sheetData>${cf}</worksheet>`}); });
+  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${fmts.length?`<numFmts count="${fmts.length}">${fmts.map((f,i)=>`<numFmt numFmtId="${164+i}" formatCode="${xe(f)}"/>`).join('')}</numFmts>`:''}<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8EEF2"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FF9AA7B0"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.map(x=>`<xf numFmtId="${x.f}" fontId="${x.b?1:0}" fillId="${x.b&&x.a==='center'&&!x.f?2:0}" borderId="${x.b&&x.a==='center'&&!x.f?1:0}" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="${x.a}" vertical="center" wrapText="${x.b&&x.a==='center'&&!x.f?1:0}"/></xf>`).join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles><dxfs count="3"><dxf><font><color rgb="FF9C0006"/></font><fill><patternFill><bgColor rgb="FFFFC7CE"/></patternFill></fill></dxf><dxf><font><color rgb="FF9C5700"/></font><fill><patternFill><bgColor rgb="FFFFEB9C"/></patternFill></fill></dxf><dxf><font><color rgb="FF006100"/></font><fill><patternFill><bgColor rgb="FFC6EFCE"/></patternFill></fill></dxf></dxfs></styleSheet>`;
+  const files=[{name:'[Content_Types].xml',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`},
+    {name:'_rels/.rels',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`},
+    {name:'xl/workbook.xml',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s,i)=>`<sheet name="${xe(s.nm)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets></workbook>`},
+    {name:'xl/_rels/workbook.xml.rels',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`},
+    {name:'xl/styles.xml',data:styles}].concat(sheets.map((s,i)=>({name:`xl/worksheets/sheet${i+1}.xml`,data:s.xml})));
+  return xpZip(files); }
+document.addEventListener('input',e=>{ const el=e.target; if(!el||!el.matches||!el.matches('input[data-th]')) return; const raw=el.value, pos=el.selectionStart==null?raw.length:el.selectionStart, digitsBefore=raw.slice(0,pos).replace(/\D/g,'').length, digits=raw.replace(/\D/g,'');
+  const out=digits===''?'':Number(digits).toLocaleString('en-US'); if(out===raw) return; el.value=out; let c=0,i=0; if(digitsBefore>0){ for(;i<out.length&&c<digitsBefore;i++) if(/\d/.test(out[i])) c++; } try{ el.setSelectionRange(i,i); }catch(_){} });
+let XP_MENU=null;
+function xpClose(){ if(XP_MENU){ XP_MENU.remove(); XP_MENU=null; } }
+function xpOpen(btn){ xpClose(); const secEl=btn.closest('.sec'); if(!secEl) return; const m=document.createElement('div'); m.className='xm'; m.innerHTML=`<button type="button" data-xk="png">Image (PNG)</button><button type="button" data-xk="pdf">PDF</button>${ADMIN?'<button type="button" data-xk="xlsx">Excel (.xlsx)</button>':''}`;
+  document.body.appendChild(m); const r=btn.getBoundingClientRect(); m.style.top=Math.min(r.bottom+4,window.innerHeight-m.offsetHeight-8)+'px'; m.style.left=Math.max(8,Math.min(r.right-m.offsetWidth,window.innerWidth-m.offsetWidth-8))+'px'; XP_MENU=m;
+  m.addEventListener('click',async e=>{ const b=e.target.closest('[data-xk]'); if(!b) return; const k=b.dataset.xk; xpClose(); try{ const info=xpInfo(secEl); if(!info.tables.length) return; if(k==='png') await xpImage(info); else if(k==='pdf') xpPdfFile(info); else if(k==='xlsx'&&ADMIN) xpSave(xpXlsx(info),xpName(info,'xlsx')); }catch(err){ UI.flash='Export failed. Try again.'; console.error(err); } }); }
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-exp]'); if(b){ e.preventDefault(); e.stopPropagation(); xpOpen(b); return; } if(XP_MENU&&!e.target.closest('.xm')) xpClose(); },true);
 const PAGES={insights:viewInsights,area:viewArea,store:viewStore,scorecard:viewScorecard,focus:viewFocus,next:viewNext,plan:viewPlan,pace:viewPace,lowhigh:viewLowHigh,daily:viewDaily,prepaid:viewPrepaid,agents:viewAgents,payout:viewPayout,me:viewMe,mystore:viewMyStore,entry:viewEntry,setup:viewSetup};
 let CUR='area';
 function route(){
@@ -1262,7 +1388,7 @@ function bind(){
     if(!date||date<days[0]||date>days[days.length-1]){ UI.flash='Pick a date inside the month.'; return route(); }
     if(date<=st.baseDate){ UI.flash='A day of sales must come after the company report ('+dl(st.baseDate)+'). Upload a newer report instead.'; return route(); }
     const rec={}; let any=false;
-    st.stores.forEach((s,i)=>{ rec[s.name]={}; KP.forEach(k=>{ const v=$(`in-${i}-${k}`).value; const x=v===''?0:Math.max(0,+v); rec[s.name][k]=x; if(x) any=true; }); });
+    st.stores.forEach((s,i)=>{ rec[s.name]={}; KP.forEach(k=>{ const v=$(`in-${i}-${k}`).value; const x=v===''?0:Math.max(0,nv(v)); rec[s.name][k]=x; if(x) any=true; }); });
     if(!any){ UI.flash='Type at least one number first.'; return route(); }
     const nb=$('e-notify'); UI.notifyOff=!!nb&&!nb.checked; if(nb&&nb.checked) NOTIFY='Sales updated up to '+dl2(date); st.daily[date]=rec; UI.flash='Saved '+dl2(date)+'. Every screen now shows numbers up to this day.'+(nb&&nb.checked?' The team will be notified.':''); UI.entryDate=nextEntryDate(); save(); route(); window.scrollTo(0,0); });
   on('e-del','onclick',()=>{ delete st.daily[UI.entryDate]; save(); UI.flash='Deleted '+dl2(UI.entryDate)+'.'; route(); });
@@ -1286,13 +1412,13 @@ function bind(){
   on('s-hol','onchange',e=>{ S().holidays=e.target.value.split(/[ ,;]+/).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)); save(); route(); });
   qa('[data-w]',el=>el.addEventListener('change',()=>{ S().weights[el.dataset.w]=Math.max(0,+el.value||0)/100; save(); route(); }));
   qa('[data-r]',el=>el.addEventListener('change',()=>{ S()[el.dataset.r]=Math.max(0,+el.value||0)/100; save(); route(); }));
-  qa('[data-t]',el=>el.addEventListener('change',()=>{ const [nm,k]=el.dataset.t.split('|'); st.targets[nm][k]=Math.max(0,+el.value||0); save(); route(); }));
+  qa('[data-t]',el=>el.addEventListener('change',()=>{ const [nm,k]=el.dataset.t.split('|'); st.targets[nm][k]=Math.max(0,nv(el.value)||0); save(); route(); }));
   /* store manager view */
   on('ms-date','onchange',e=>{ UI.msDate=e.target.value; UI.flash=''; route(); });
   qa('[data-msdate]',el=>el.addEventListener('click',()=>{ UI.msDate=el.dataset.msdate; UI.flash=''; route(); window.scrollTo(0,0); }));
   on('ms-save','onclick',()=>{ const nm=UI.msStore, date=$('ms-date').value, days=monthDays();
     if(!date||date<=st.baseDate||date>days[days.length-1]){ UI.flash='Pick a date after the company report ('+dl(st.baseDate)+') inside the month.'; return route(); }
-    const rec={}; let any=false; KP.forEach(k=>{ const v=$('ms-'+k).value; const x=v===''?0:Math.max(0,+v); rec[k]=x; if(x) any=true; });
+    const rec={}; let any=false; KP.forEach(k=>{ const v=$('ms-'+k).value; const x=v===''?0:Math.max(0,nv(v)); rec[k]=x; if(x) any=true; });
     if(!any){ UI.flash='Type at least one number first.'; return route(); }
     st.mineStore[nm]=st.mineStore[nm]||{}; st.mineStore[nm][date]=rec; UI.msDate=null; UI.flash='Saved your store sales for '+dl2(date)+'.'; save(); route(); });
   on('ms-del','onclick',()=>{ const nm=UI.msStore, date=$('ms-date').value; if(st.mineStore[nm]) delete st.mineStore[nm][date]; UI.msDate=null; UI.flash='Deleted.'; save(); route(); });
@@ -1301,12 +1427,12 @@ function bind(){
   qa('[data-medate]',el=>el.addEventListener('click',()=>{ UI.meDate=el.dataset.medate; UI.flash=''; route(); window.scrollTo(0,0); }));
   on('me-save','onclick',()=>{ const key=UI.meAgent, date=$('me-date').value, days=monthDays();
     if(!date||date<=st.agentBaseDate||date>days[days.length-1]){ UI.flash='Pick a date after the company file ('+dl(st.agentBaseDate)+') inside the month.'; return route(); }
-    const rec={}; let any=false; KP.forEach(k=>{ const v=$('me-'+k).value; const x=v===''?0:Math.max(0,+v); rec[k]=x; if(x) any=true; });
+    const rec={}; let any=false; KP.forEach(k=>{ const v=$('me-'+k).value; const x=v===''?0:Math.max(0,nv(v)); rec[k]=x; if(x) any=true; });
     if(!any){ UI.flash='Type at least one number first.'; return route(); }
     st.mine[key]=st.mine[key]||{}; st.mine[key][date]=rec; UI.meDate=null; UI.flash='Saved your sales for '+dl2(date)+'.'; save(); route(); });
   on('me-del','onclick',()=>{ const key=UI.meAgent, date=$('me-date').value; if(st.mine[key]) delete st.mine[key][date]; UI.meDate=null; UI.flash='Deleted.'; save(); route(); });
 }
-document.getElementById('app').addEventListener('click',e=>{ if(!MQ.matches) return;
+document.getElementById('app').addEventListener('click',e=>{ if(!MQ.matches||e.target.closest('[data-exp]')) return;
   const h=e.target.closest('.sec-h'); if(h){ const s=h.parentElement; const c=s.classList.toggle('closed'); UI.openSecs=UI.openSecs||{}; UI.openSecs[s.dataset.sk]=!c; return; }
   const nmc=e.target.closest('table.rt:not(.flat) td.name'); if(!nmc||e.target.closest('input,button,a,select,textarea')) return;
   nmc.parentElement.classList.toggle('open'); },true);
